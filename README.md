@@ -38,14 +38,41 @@
 ---
 
 ## 🚀 طريقة بناء وتثبيت APK و AAB
-1. **عبر GitHub Actions تلقائياً**:
-   - تم إنشاء ملف `.github/workflows/build-android.yml`.
-   - بمجرد عمل `git push` إلى مستودعك، يقوم GitHub ببناء ملفات APK (Debug & Release) وملف AAB ويرفعها كـ Artifacts جاهزة للتحميل المباشر على هاتفك.
-2. **عبر سطر الأوامر (في بيئة السحابة)**:
+1. **عبر سطر الأوامر (باستخدام Gradle Wrapper المضمن)**:
    ```bash
-   ./gradlew assembleDebug      # لبناء ملف APK
-   ./gradlew bundleRelease      # لبناء ملف AAB للنشر
+   ./gradlew assembleDebug      # لبناء ملف Debug APK فوري للتجربة
+   ./gradlew assembleRelease    # لبناء ملف Release APK موقّع وجاهز للتثبيت
+   ./gradlew bundleRelease      # لبناء حزمة Google Play AAB
    ```
+   *ملاحظة حول التوقيع (Signing)*: تم تزويد `app/build.gradle.kts` بنظام توقيع ذكي fallback؛ إذا لم تكن قمت بإعداد مفتاح نشر خاص بك، يتم التوقيع تلقائياً بمفتاح التطوير الآمن المدمج لضمان إنتاج ملف APK/AAB موقّع وقابل للتثبيت مباشرة دون أي خطأ.
+
+2. **عبر GitHub Actions تلقائياً**:
+   - ملف العمل `.github/workflows/build-android.yml` مُعد وجاهز.
+   - بمجرد رفع الكود (`git push`)، يتم بناء ملفات APK و AAB تلقائياً وتوفيرها كـ Artifacts قابلة للتنزيل بضغطة واحدة من الموبايل.
+   - لاستخدام مفتاح النشر الخاص بك على Play Store، أضف المتغيرات السرية في إعدادات المستودع (GitHub Secrets): `KEYSTORE_PATH`, `STORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`.
+
+---
+
+## 🌐 تشغيل واستضافة خادم الأونلاين (Dedicated Server)
+كود السيرفر مكتوب بـ Node.js وخفيف جداً، موجود في مجلد `/server`.
+1. **التشغيل المحلي**:
+   ```bash
+   cd server
+   npm install
+   node server.js
+   ```
+2. **الاستضافة المجانية بنقرة واحدة (Render / Railway / Glitch)**:
+   - السيرفر جاهز للعمل على المنافذ الديناميكية عبر `process.env.PORT || 8080`.
+   - يمكنك ربط مجلد `server/` بخدمة مجانية مثل [Render.com](https://render.com) كـ Web Service (Node.js) أو تشغيل `Dockerfile` المرفق مجاناً.
+   - داخل اللعبة في شاشة **Multiplayer**، اكتب رابط الخادم (مثال: `wss://your-server.onrender.com`) ورمز الغرفة للعب المشترك ومزامنة الكتل واللاعبين.
+
+---
+
+## 📦 مجلد الأصول (Assets)
+تم تجهيز مجلد `app/src/main/assets` بكافة التعريفات والمواصفات:
+- `textures/block_atlas.json`: مواصفات تكسترات الكتل والأبعاد بدقة 32×32 الأصلية.
+- `audio/sound_manifest.json`: مواصفات التوليد الصوتي الرقمي للخطوات والتعدين والرياح والموسيقى الهادئة.
+- `mods/sample_mod.json`: مود تجريبي جاهز (Ruby & Garnet Mod) لاختبار نظام المودات الآمن.
 
 ---
 

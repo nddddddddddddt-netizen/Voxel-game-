@@ -1,0 +1,15 @@
+{
+  "engine": "Blockhaven Realtime PCM Audio Engine",
+  "sample_rate": 22050,
+  "channels": 1,
+  "sound_effects": {
+    "footstep_grass": {"freq": 140, "duration_ms": 70, "waveform": "noise_bandpass"},
+    "footstep_stone": {"freq": 420, "duration_ms": 50, "waveform": "click_decay"},
+    "footstep_wood": {"freq": 220, "duration_ms": 65, "waveform": "triangle_thud"},
+    "footstep_sand": {"freq": 180, "duration_ms": 90, "waveform": "noise_filtered"},
+    "footstep_water": {"freq": 320, "duration_ms": 110, "waveform": "sine_splash"},
+    "block_break": {"freq": 110, "duration_ms": 130, "waveform": "noise_crunch"},
+    "block_place": {"freq": 260, "duration_ms": 80, "waveform": "sine_decay"},
+    "ambient_calm": {"scale": ["C4", "E4", "G4", "B4", "D5"], "tempo_bpm": 64, "waveform": "bell_sine"}
+  }
+}

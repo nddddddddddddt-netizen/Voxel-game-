@@ -1,0 +1,42 @@
+{
+  "id": "com.blockhaven.ruby_mod",
+  "name": "Ruby & Garnet Mod",
+  "version": "1.0.0",
+  "author": "Blockhaven Community",
+  "level": 1,
+  "description": "Adds Ruby Ore, Garnet Gemstones, and Ruby Pickaxe",
+  "permissions": ["REGISTER_BLOCKS", "REGISTER_ITEMS", "REGISTER_RECIPES"],
+  "custom_blocks": [
+    {
+      "name": "Ruby Ore",
+      "hardness": 3.5,
+      "tool_type": "pickaxe",
+      "harvest_level": 2,
+      "drops": "item.ruby_gem"
+    },
+    {
+      "name": "Ruby Block",
+      "hardness": 5.0,
+      "emissive": true
+    }
+  ],
+  "custom_items": [
+    {
+      "name": "Ruby Gemstone",
+      "stack_size": 64
+    },
+    {
+      "name": "Ruby Pickaxe",
+      "durability": 850,
+      "mining_speed": 7.5
+    }
+  ],
+  "recipes": [
+    {
+      "type": "crafting_3x3",
+      "pattern": ["RRR", "RRR", "RRR"],
+      "keys": {"R": "item.ruby_gem"},
+      "result": {"block": "ruby_block", "count": 1}
+    }
+  ]
+}
