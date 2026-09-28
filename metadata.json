@@ -1,0 +1,6 @@
+{
+  "name": "Blockhaven",
+  "description": "A high-performance native 3D voxel sandbox game with infinite procedural worlds, dynamic lighting, survival, crafting, multiplayer, and modding support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
