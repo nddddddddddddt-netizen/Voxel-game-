@@ -136,7 +136,7 @@ class BlockhavenUnitTest {
         val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default)
         val world = com.example.blockhaven.world.World(1234L, scope)
 
-        val resp = engine.dispatchCommand("ping", emptyList(), player, world)
+        val resp = engine.dispatchCommand("ping", player, world)
         assertEquals("[test_mod] Handled: ping", resp)
         assertEquals("ping", receivedCommand)
     }

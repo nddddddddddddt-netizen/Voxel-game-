@@ -1,12 +1,12 @@
 package com.example.blockhaven.render
 
 import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
 import android.opengl.GLES30
 import android.opengl.GLUtils
 import java.util.Random
+import kotlin.math.cos
+import kotlin.math.sin
 
 object TextureAtlas {
     const val TILE_SIZE = 32
@@ -31,12 +31,10 @@ object TextureAtlas {
     fun init() {
         if (textureId != 0) return
 
-        val bitmap = Bitmap.createBitmap(ATLAS_SIZE, ATLAS_SIZE, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        val pixels = IntArray(ATLAS_SIZE * ATLAS_SIZE)
+        generateHighFidelityTextures(pixels)
 
-        // Generate procedural pixel art for all tiles
-        generateAllTiles(canvas, paint)
+        val bitmap = Bitmap.createBitmap(pixels, ATLAS_SIZE, ATLAS_SIZE, Bitmap.Config.ARGB_8888)
 
         val textures = IntArray(1)
         GLES30.glGenTextures(1, textures, 0)
@@ -54,7 +52,21 @@ object TextureAtlas {
         bitmap.recycle()
     }
 
-    private fun generateAllTiles(canvas: Canvas, paint: Paint) {
+    private inline fun setTexel(pixels: IntArray, ox: Int, oy: Int, x: Int, y: Int, color: Int) {
+        if (x in 0 until TILE_SIZE && y in 0 until TILE_SIZE) {
+            pixels[(oy + y) * ATLAS_SIZE + (ox + x)] = color
+        }
+    }
+
+    private inline fun rgb(r: Int, g: Int, b: Int): Int {
+        return (0xFF shl 24) or ((r.coerceIn(0, 255)) shl 16) or ((g.coerceIn(0, 255)) shl 8) or (b.coerceIn(0, 255))
+    }
+
+    private inline fun rgba(r: Int, g: Int, b: Int, a: Int): Int {
+        return ((a.coerceIn(0, 255)) shl 24) or ((r.coerceIn(0, 255)) shl 16) or ((g.coerceIn(0, 255)) shl 8) or (b.coerceIn(0, 255))
+    }
+
+    private fun generateHighFidelityTextures(pixels: IntArray) {
         val rand = Random(424242L)
 
         for (tile in 0..33) {
@@ -62,403 +74,566 @@ object TextureAtlas {
             val oy = (tile / TILES_PER_ROW) * TILE_SIZE
 
             when (tile) {
-                0 -> drawGrassTop(canvas, ox, oy, rand)
-                1 -> drawGrassSide(canvas, ox, oy, rand)
-                2 -> drawDirt(canvas, ox, oy, rand)
-                3 -> drawStone(canvas, ox, oy, rand)
-                4 -> drawCobblestone(canvas, ox, oy, rand)
-                5 -> drawSand(canvas, ox, oy, rand)
-                6 -> drawSnow(canvas, ox, oy, rand)
-                7 -> drawWoodLogTop(canvas, ox, oy)
-                8 -> drawWoodLogSide(canvas, ox, oy, rand)
-                9 -> drawWoodPlanks(canvas, ox, oy)
-                10 -> drawLeaves(canvas, ox, oy, rand)
-                11 -> drawGlass(canvas, ox, oy)
-                12 -> drawWater(canvas, ox, oy, rand)
-                13 -> drawBedrock(canvas, ox, oy, rand)
-                14 -> drawOre(canvas, ox, oy, Color.rgb(20, 20, 20), rand) // Coal
-                15 -> drawOre(canvas, ox, oy, Color.rgb(215, 150, 105), rand) // Iron
-                16 -> drawOre(canvas, ox, oy, Color.rgb(255, 215, 0), rand) // Gold
-                17 -> drawOre(canvas, ox, oy, Color.rgb(80, 235, 235), rand) // Diamond
-                18 -> drawOre(canvas, ox, oy, Color.rgb(180, 70, 255), rand) // Etherite
-                19 -> drawOre(canvas, ox, oy, Color.rgb(255, 95, 20), rand) // Pyrite
-                20 -> drawLuminite(canvas, ox, oy, rand) // Luminite
-                21 -> drawStoneBricks(canvas, ox, oy)
-                22 -> drawCraftingTableTop(canvas, ox, oy)
-                23 -> drawCraftingTableSide(canvas, ox, oy)
-                24 -> drawFurnaceFront(canvas, ox, oy)
-                25 -> drawTorch(canvas, ox, oy)
-                26 -> drawBookshelf(canvas, ox, oy, rand)
-                27 -> drawObsidian(canvas, ox, oy, rand)
-                28 -> drawClay(canvas, ox, oy, rand)
-                29 -> drawCactusTop(canvas, ox, oy)
-                30 -> drawCactusSide(canvas, ox, oy, rand)
-                31 -> drawTallGrass(canvas, ox, oy, rand)
-                32 -> drawFlower(canvas, ox, oy, Color.rgb(30, 200, 240))
-                33 -> drawFlower(canvas, ox, oy, Color.rgb(255, 210, 20))
+                0 -> drawGrassTop(pixels, ox, oy, rand)
+                1 -> drawGrassSide(pixels, ox, oy, rand)
+                2 -> drawDirt(pixels, ox, oy, rand)
+                3 -> drawStone(pixels, ox, oy, rand)
+                4 -> drawCobblestone(pixels, ox, oy, rand)
+                5 -> drawSand(pixels, ox, oy, rand)
+                6 -> drawSnow(pixels, ox, oy, rand)
+                7 -> drawWoodLogTop(pixels, ox, oy)
+                8 -> drawWoodLogSide(pixels, ox, oy, rand)
+                9 -> drawWoodPlanks(pixels, ox, oy)
+                10 -> drawLeaves(pixels, ox, oy, rand)
+                11 -> drawGlass(pixels, ox, oy)
+                12 -> drawWater(pixels, ox, oy, rand)
+                13 -> drawBedrock(pixels, ox, oy, rand)
+                14 -> drawOre(pixels, ox, oy, 28, 28, 30, rand) // Coal Ore
+                15 -> drawOre(pixels, ox, oy, 218, 160, 115, rand) // Iron Ore
+                16 -> drawOre(pixels, ox, oy, 255, 215, 30, rand) // Gold Ore
+                17 -> drawOre(pixels, ox, oy, 70, 240, 240, rand) // Diamond Ore
+                18 -> drawOre(pixels, ox, oy, 195, 80, 255, rand) // Etherite Ore
+                19 -> drawOre(pixels, ox, oy, 255, 110, 25, rand) // Pyrite Ore
+                20 -> drawLuminite(pixels, ox, oy, rand) // Luminite Crystal
+                21 -> drawStoneBricks(pixels, ox, oy)
+                22 -> drawCraftingTableTop(pixels, ox, oy)
+                23 -> drawCraftingTableSide(pixels, ox, oy)
+                24 -> drawFurnaceFront(pixels, ox, oy)
+                25 -> drawTorch(pixels, ox, oy)
+                26 -> drawBookshelf(pixels, ox, oy, rand)
+                27 -> drawObsidian(pixels, ox, oy, rand)
+                28 -> drawClay(pixels, ox, oy, rand)
+                29 -> drawCactusTop(pixels, ox, oy)
+                30 -> drawCactusSide(pixels, ox, oy, rand)
+                31 -> drawTallGrass(pixels, ox, oy, rand)
+                32 -> drawFlower(pixels, ox, oy, 30, 205, 245)
+                33 -> drawFlower(pixels, ox, oy, 255, 215, 25)
             }
         }
     }
 
-    private fun drawGrassTop(canvas: Canvas, ox: Int, oy: Int, rand: Random) {
-        val baseR = 75; val baseG = 165; val baseB = 55
+    private fun drawGrassTop(pixels: IntArray, ox: Int, oy: Int, rand: Random) {
+        val baseR = 72; val baseG = 158; val baseB = 48
         for (y in 0 until TILE_SIZE) {
             for (x in 0 until TILE_SIZE) {
-                val noise = rand.nextInt(25) - 12
-                val c = Color.rgb(
-                    (baseR + noise).coerceIn(0, 255),
-                    (baseG + noise * 2).coerceIn(0, 255),
-                    (baseB + noise).coerceIn(0, 255)
-                )
-                canvas.drawPoint((ox + x).toFloat(), (oy + y).toFloat(), Paint().apply { color = c })
+                val blade = if ((x + y) % 3 == 0) 14 else if ((x * 3 + y * 5) % 7 == 0) -10 else 0
+                val noise = rand.nextInt(18) - 9 + blade
+                // Subtle edge bevel
+                val edgeShade = if (x == 0 || y == 0) -12 else if (x == TILE_SIZE - 1 || y == TILE_SIZE - 1) 8 else 0
+                setTexel(pixels, ox, oy, x, y, rgb(baseR + noise + edgeShade, baseG + noise * 2 + edgeShade, baseB + noise + edgeShade))
             }
         }
     }
 
-    private fun drawGrassSide(canvas: Canvas, ox: Int, oy: Int, rand: Random) {
-        drawDirt(canvas, ox, oy, rand)
-        // Green fringe on top 6-8 pixels
+    private fun drawGrassSide(pixels: IntArray, ox: Int, oy: Int, rand: Random) {
+        drawDirt(pixels, ox, oy, rand)
+        // Hanging grass blades with subtle variation
         for (x in 0 until TILE_SIZE) {
-            val hang = 6 + (x % 3) + rand.nextInt(3)
-            for (y in 0 until hang) {
-                val c = Color.rgb(75 + rand.nextInt(20), 160 + rand.nextInt(30), 50 + rand.nextInt(20))
-                canvas.drawPoint((ox + x).toFloat(), (oy + y).toFloat(), Paint().apply { color = c })
+            val depth = 6 + ((sin(x * 0.8f) * 2f).toInt()) + rand.nextInt(3)
+            for (y in 0 until depth) {
+                val shade = (y * 5) - 10
+                val r = (72 + rand.nextInt(15) + shade).coerceIn(40, 120)
+                val g = (158 + rand.nextInt(20) + shade).coerceIn(100, 210)
+                val b = (48 + rand.nextInt(15) + shade).coerceIn(30, 90)
+                setTexel(pixels, ox, oy, x, y, rgb(r, g, b))
             }
         }
     }
 
-    private fun drawDirt(canvas: Canvas, ox: Int, oy: Int, rand: Random) {
-        val baseR = 125; val baseG = 85; val baseB = 50
+    private fun drawDirt(pixels: IntArray, ox: Int, oy: Int, rand: Random) {
+        val baseR = 120; val baseG = 82; val baseB = 46
         for (y in 0 until TILE_SIZE) {
             for (x in 0 until TILE_SIZE) {
-                val noise = rand.nextInt(30) - 15
-                val c = Color.rgb(
-                    (baseR + noise).coerceIn(0, 255),
-                    (baseG + noise).coerceIn(0, 255),
-                    (baseB + noise).coerceIn(0, 255)
-                )
-                canvas.drawPoint((ox + x).toFloat(), (oy + y).toFloat(), Paint().apply { color = c })
+                val pebble = if ((x * 7 + y * 11) % 19 == 0) 25 else if ((x * 13 + y * 3) % 23 == 0) -20 else 0
+                val noise = rand.nextInt(20) - 10 + pebble
+                setTexel(pixels, ox, oy, x, y, rgb(baseR + noise, baseG + (noise * 0.7f).toInt(), baseB + (noise * 0.5f).toInt()))
             }
         }
     }
 
-    private fun drawStone(canvas: Canvas, ox: Int, oy: Int, rand: Random) {
-        val base = 128
+    private fun drawStone(pixels: IntArray, ox: Int, oy: Int, rand: Random) {
+        val base = 126
         for (y in 0 until TILE_SIZE) {
             for (x in 0 until TILE_SIZE) {
-                val noise = rand.nextInt(36) - 18
-                val v = (base + noise).coerceIn(0, 255)
-                canvas.drawPoint((ox + x).toFloat(), (oy + y).toFloat(), Paint().apply { color = Color.rgb(v, v, v + 2) })
+                val vein = (sin(x * 0.35f + y * 0.2f) * 12).toInt()
+                val grain = rand.nextInt(16) - 8 + vein
+                val v = (base + grain).coerceIn(0, 255)
+                // Micro-contrast for realistic granite/stone feel
+                val blueTint = if ((x + y) % 4 == 0) 4 else 0
+                setTexel(pixels, ox, oy, x, y, rgb(v - 2, v, v + blueTint))
             }
         }
     }
 
-    private fun drawCobblestone(canvas: Canvas, ox: Int, oy: Int, rand: Random) {
-        drawStone(canvas, ox, oy, rand)
-        // Mortar lines
-        val paint = Paint().apply { color = Color.rgb(60, 60, 65) }
-        canvas.drawRect(ox.toFloat(), oy.toFloat(), (ox + TILE_SIZE).toFloat(), (oy + 1).toFloat(), paint)
-        canvas.drawRect(ox.toFloat(), (oy + 16).toFloat(), (ox + TILE_SIZE).toFloat(), (oy + 17).toFloat(), paint)
-        canvas.drawRect((ox + 16).toFloat(), oy.toFloat(), (ox + 17).toFloat(), (oy + 16).toFloat(), paint)
-        canvas.drawRect((ox + 8).toFloat(), (oy + 16).toFloat(), (ox + 9).toFloat(), (oy + 32).toFloat(), paint)
-        canvas.drawRect((ox + 24).toFloat(), (oy + 16).toFloat(), (ox + 25).toFloat(), (oy + 32).toFloat(), paint)
+    private fun drawCobblestone(pixels: IntArray, ox: Int, oy: Int, rand: Random) {
+        drawStone(pixels, ox, oy, rand)
+        // Mortar lines and stone segment highlights
+        val mortarColor = rgb(55, 55, 60)
+        val highlightColor = rgb(150, 150, 155)
+
+        for (x in 0 until TILE_SIZE) {
+            setTexel(pixels, ox, oy, x, 0, mortarColor)
+            setTexel(pixels, ox, oy, x, 15, mortarColor)
+            setTexel(pixels, ox, oy, x, 16, mortarColor)
+            setTexel(pixels, ox, oy, x, 31, mortarColor)
+            // Bevel highlights
+            if (x !in listOf(0, 15, 16, 31)) {
+                setTexel(pixels, ox, oy, x, 1, highlightColor)
+                setTexel(pixels, ox, oy, x, 17, highlightColor)
+            }
+        }
+        for (y in 0 until 16) {
+            setTexel(pixels, ox, oy, 15, y, mortarColor)
+            setTexel(pixels, ox, oy, 16, y, mortarColor)
+        }
+        for (y in 16 until 32) {
+            setTexel(pixels, ox, oy, 7, y, mortarColor)
+            setTexel(pixels, ox, oy, 8, y, mortarColor)
+            setTexel(pixels, ox, oy, 23, y, mortarColor)
+            setTexel(pixels, ox, oy, 24, y, mortarColor)
+        }
     }
 
-    private fun drawSand(canvas: Canvas, ox: Int, oy: Int, rand: Random) {
-        val baseR = 225; val baseG = 205; val baseB = 140
+    private fun drawSand(pixels: IntArray, ox: Int, oy: Int, rand: Random) {
+        val baseR = 226; val baseG = 202; val baseB = 138
         for (y in 0 until TILE_SIZE) {
             for (x in 0 until TILE_SIZE) {
-                val wave = (kotlin.math.sin(x * 0.4f + y * 0.2f) * 8).toInt()
-                val noise = rand.nextInt(16) - 8 + wave
-                val c = Color.rgb(
-                    (baseR + noise).coerceIn(0, 255),
-                    (baseG + noise).coerceIn(0, 255),
-                    (baseB + noise).coerceIn(0, 255)
-                )
-                canvas.drawPoint((ox + x).toFloat(), (oy + y).toFloat(), Paint().apply { color = c })
+                val wave = (sin(x * 0.45f + y * 0.25f) * 10).toInt()
+                val sparkle = if (rand.nextInt(40) == 0) 18 else 0
+                val noise = rand.nextInt(14) - 7 + wave + sparkle
+                setTexel(pixels, ox, oy, x, y, rgb(baseR + noise, baseG + (noise * 0.9f).toInt(), baseB + (noise * 0.6f).toInt()))
             }
         }
     }
 
-    private fun drawSnow(canvas: Canvas, ox: Int, oy: Int, rand: Random) {
+    private fun drawSnow(pixels: IntArray, ox: Int, oy: Int, rand: Random) {
         for (y in 0 until TILE_SIZE) {
             for (x in 0 until TILE_SIZE) {
-                val noise = rand.nextInt(12) - 6
-                val c = Color.rgb(
-                    (245 + noise).coerceIn(0, 255),
-                    (248 + noise).coerceIn(0, 255),
-                    (255 + noise).coerceIn(0, 255)
-                )
-                canvas.drawPoint((ox + x).toFloat(), (oy + y).toFloat(), Paint().apply { color = c })
+                val sparkle = if (rand.nextInt(25) == 0) 12 else 0
+                val noise = rand.nextInt(10) - 5 + sparkle
+                val r = (245 + noise).coerceIn(220, 255)
+                val g = (248 + noise).coerceIn(225, 255)
+                val b = (255).coerceIn(230, 255)
+                setTexel(pixels, ox, oy, x, y, rgb(r, g, b))
             }
         }
     }
 
-    private fun drawWoodLogTop(canvas: Canvas, ox: Int, oy: Int) {
-        val p = Paint()
-        // Bark border
-        p.color = Color.rgb(90, 60, 30)
-        canvas.drawRect(ox.toFloat(), oy.toFloat(), (ox + TILE_SIZE).toFloat(), (oy + TILE_SIZE).toFloat(), p)
-        // Growth rings
-        p.color = Color.rgb(180, 140, 90)
-        canvas.drawRect((ox + 3).toFloat(), (oy + 3).toFloat(), (ox + TILE_SIZE - 3).toFloat(), (oy + TILE_SIZE - 3).toFloat(), p)
-        p.color = Color.rgb(150, 110, 70)
-        canvas.drawRect((ox + 7).toFloat(), (oy + 7).toFloat(), (ox + TILE_SIZE - 7).toFloat(), (oy + TILE_SIZE - 7).toFloat(), p)
-        p.color = Color.rgb(180, 140, 90)
-        canvas.drawRect((ox + 11).toFloat(), (oy + 11).toFloat(), (ox + TILE_SIZE - 11).toFloat(), (oy + TILE_SIZE - 11).toFloat(), p)
-        p.color = Color.rgb(130, 95, 60)
-        canvas.drawRect((ox + 14).toFloat(), (oy + 14).toFloat(), (ox + 18).toFloat(), (oy + 18).toFloat(), p)
-    }
+    private fun drawWoodLogTop(pixels: IntArray, ox: Int, oy: Int) {
+        val bark = rgb(86, 56, 28)
+        val outerWood = rgb(178, 136, 84)
+        val ringDark = rgb(142, 102, 60)
+        val innerCore = rgb(125, 88, 50)
 
-    private fun drawWoodLogSide(canvas: Canvas, ox: Int, oy: Int, rand: Random) {
         for (y in 0 until TILE_SIZE) {
             for (x in 0 until TILE_SIZE) {
-                val grain = (kotlin.math.sin(x * 0.7f) * 15).toInt()
-                val noise = rand.nextInt(14) - 7 + grain
-                val c = Color.rgb(
-                    (95 + noise).coerceIn(0, 255),
-                    (65 + noise).coerceIn(0, 255),
-                    (35 + noise).coerceIn(0, 255)
-                )
-                canvas.drawPoint((ox + x).toFloat(), (oy + y).toFloat(), Paint().apply { color = c })
+                val dx = x - 15.5f
+                val dy = y - 15.5f
+                val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+                val col = when {
+                    dist > 14.5f -> bark
+                    dist in 11.5f..13.0f -> ringDark
+                    dist in 7.5f..9.0f -> ringDark
+                    dist in 3.5f..5.0f -> ringDark
+                    dist <= 2.5f -> innerCore
+                    else -> outerWood
+                }
+                setTexel(pixels, ox, oy, x, y, col)
             }
         }
     }
 
-    private fun drawWoodPlanks(canvas: Canvas, ox: Int, oy: Int) {
-        val p = Paint()
-        p.color = Color.rgb(175, 130, 80)
-        canvas.drawRect(ox.toFloat(), oy.toFloat(), (ox + TILE_SIZE).toFloat(), (oy + TILE_SIZE).toFloat(), p)
-        // 4 plank lines
-        val lineP = Paint().apply { color = Color.rgb(90, 60, 30) }
-        for (i in 1..3) {
-            val ly = oy + i * 8
-            canvas.drawRect(ox.toFloat(), ly.toFloat(), (ox + TILE_SIZE).toFloat(), (ly + 1).toFloat(), lineP)
-        }
-        // Vertical seams
-        canvas.drawRect((ox + 12).toFloat(), oy.toFloat(), (ox + 13).toFloat(), (oy + 8).toFloat(), lineP)
-        canvas.drawRect((ox + 22).toFloat(), (oy + 8).toFloat(), (ox + 23).toFloat(), (oy + 16).toFloat(), lineP)
-        canvas.drawRect((ox + 8).toFloat(), (oy + 16).toFloat(), (ox + 9).toFloat(), (oy + 24).toFloat(), lineP)
-        canvas.drawRect((ox + 20).toFloat(), (oy + 24).toFloat(), (ox + 21).toFloat(), (oy + 32).toFloat(), lineP)
-    }
-
-    private fun drawLeaves(canvas: Canvas, ox: Int, oy: Int, rand: Random) {
+    private fun drawWoodLogSide(pixels: IntArray, ox: Int, oy: Int, rand: Random) {
         for (y in 0 until TILE_SIZE) {
             for (x in 0 until TILE_SIZE) {
-                if (rand.nextFloat() < 0.12f) {
-                    canvas.drawPoint((ox + x).toFloat(), (oy + y).toFloat(), Paint().apply { color = Color.TRANSPARENT })
+                val furrow = if ((x % 8 == 0) || ((x + 3) % 8 == 0 && (y % 6 == 0))) -25 else 0
+                val grain = (sin(x * 0.9f) * 14).toInt()
+                val noise = rand.nextInt(12) - 6 + furrow + grain
+                val r = (92 + noise).coerceIn(40, 160)
+                val g = (62 + (noise * 0.7f).toInt()).coerceIn(25, 120)
+                val b = (32 + (noise * 0.4f).toInt()).coerceIn(15, 80)
+                setTexel(pixels, ox, oy, x, y, rgb(r, g, b))
+            }
+        }
+    }
+
+    private fun drawWoodPlanks(pixels: IntArray, ox: Int, oy: Int) {
+        val baseR = 178; val baseG = 132; val baseB = 78
+        val seamColor = rgb(88, 58, 28)
+        val highlightColor = rgb(205, 158, 102)
+
+        for (y in 0 until TILE_SIZE) {
+            val plankIndex = y / 8
+            val isSeamY = y % 8 == 7
+            val isHighlightY = y % 8 == 0
+
+            for (x in 0 until TILE_SIZE) {
+                if (isSeamY) {
+                    setTexel(pixels, ox, oy, x, y, seamColor)
+                } else if (isHighlightY) {
+                    setTexel(pixels, ox, oy, x, y, highlightColor)
                 } else {
-                    val noise = rand.nextInt(35) - 17
-                    val c = Color.argb(
-                        255,
-                        (40 + noise).coerceIn(0, 255),
-                        (140 + noise * 2).coerceIn(0, 255),
-                        (35 + noise).coerceIn(0, 255)
-                    )
-                    canvas.drawPoint((ox + x).toFloat(), (oy + y).toFloat(), Paint().apply { color = c })
+                    // Vertical seams staggered per row
+                    val seamX = when (plankIndex) {
+                        0 -> 14
+                        1 -> 24
+                        2 -> 8
+                        else -> 20
+                    }
+                    if (x == seamX) {
+                        setTexel(pixels, ox, oy, x, y, seamColor)
+                    } else if (x == seamX + 1) {
+                        setTexel(pixels, ox, oy, x, y, highlightColor)
+                    } else {
+                        val grain = ((x * 3 + y * 7) % 5) * 4 - 8
+                        setTexel(pixels, ox, oy, x, y, rgb(baseR + grain, baseG + grain, baseB + (grain * 0.6f).toInt()))
+                    }
                 }
             }
         }
     }
 
-    private fun drawGlass(canvas: Canvas, ox: Int, oy: Int) {
-        val p = Paint()
-        // Translucent frosted base
-        p.color = Color.argb(45, 220, 240, 255)
-        canvas.drawRect(ox.toFloat(), oy.toFloat(), (ox + TILE_SIZE).toFloat(), (oy + TILE_SIZE).toFloat(), p)
-        // Outer frame
-        p.color = Color.argb(200, 240, 250, 255)
-        canvas.drawRect(ox.toFloat(), oy.toFloat(), (ox + TILE_SIZE).toFloat(), (oy + 2).toFloat(), p)
-        canvas.drawRect(ox.toFloat(), (oy + TILE_SIZE - 2).toFloat(), (ox + TILE_SIZE).toFloat(), (oy + TILE_SIZE).toFloat(), p)
-        canvas.drawRect(ox.toFloat(), oy.toFloat(), (ox + 2).toFloat(), (oy + TILE_SIZE).toFloat(), p)
-        canvas.drawRect((ox + TILE_SIZE - 2).toFloat(), oy.toFloat(), (ox + TILE_SIZE).toFloat(), (oy + TILE_SIZE).toFloat(), p)
-        // Diagonal reflection glint
-        for (i in 0..10) {
-            canvas.drawPoint((ox + 6 + i).toFloat(), (oy + 6 + i).toFloat(), p)
-            canvas.drawPoint((ox + 16 + i).toFloat(), (oy + 16 + i).toFloat(), p)
-        }
-    }
-
-    private fun drawWater(canvas: Canvas, ox: Int, oy: Int, rand: Random) {
+    private fun drawLeaves(pixels: IntArray, ox: Int, oy: Int, rand: Random) {
         for (y in 0 until TILE_SIZE) {
             for (x in 0 until TILE_SIZE) {
-                val wave = (kotlin.math.sin(x * 0.35f + y * 0.25f) * 20).toInt()
-                val c = Color.argb(
-                    180,
-                    (20 + wave / 2).coerceIn(0, 255),
-                    (110 + wave).coerceIn(0, 255),
-                    (230 + wave).coerceIn(0, 255)
-                )
-                canvas.drawPoint((ox + x).toFloat(), (oy + y).toFloat(), Paint().apply { color = c })
+                // Transparent openings for realistic volumetric foliage
+                if ((x * 5 + y * 13) % 17 == 0 || (x * 7 + y * 3) % 23 == 0) {
+                    setTexel(pixels, ox, oy, x, y, rgba(0, 0, 0, 0))
+                } else {
+                    val leafVar = if ((x + y) % 3 == 0) 22 else -16
+                    val noise = rand.nextInt(24) - 12 + leafVar
+                    val r = (38 + noise).coerceIn(20, 90)
+                    val g = (142 + noise * 2).coerceIn(80, 220)
+                    val b = (32 + noise).coerceIn(15, 80)
+                    setTexel(pixels, ox, oy, x, y, rgba(r, g, b, 255))
+                }
             }
         }
     }
 
-    private fun drawBedrock(canvas: Canvas, ox: Int, oy: Int, rand: Random) {
+    private fun drawGlass(pixels: IntArray, ox: Int, oy: Int) {
+        val frameColor = rgb(190, 225, 235)
+        val glintColor = rgba(255, 255, 255, 180)
+        val paneColor = rgba(180, 220, 240, 55)
+
         for (y in 0 until TILE_SIZE) {
             for (x in 0 until TILE_SIZE) {
-                val v = rand.nextInt(60)
-                canvas.drawPoint((ox + x).toFloat(), (oy + y).toFloat(), Paint().apply { color = Color.rgb(v, v, v) })
+                val isFrame = (x <= 1 || x >= TILE_SIZE - 2 || y <= 1 || y >= TILE_SIZE - 2)
+                val isGlint = (x + y in 8..10) || (x + y in 24..26)
+                val col = when {
+                    isFrame -> frameColor
+                    isGlint -> glintColor
+                    else -> paneColor
+                }
+                setTexel(pixels, ox, oy, x, y, col)
             }
         }
     }
 
-    private fun drawOre(canvas: Canvas, ox: Int, oy: Int, oreColor: Int, rand: Random) {
-        drawStone(canvas, ox, oy, rand)
-        val p = Paint().apply { color = oreColor }
-        // Gem / ore specks
-        for (g in 0..7) {
-            val gx = ox + 4 + rand.nextInt(TILE_SIZE - 8)
-            val gy = oy + 4 + rand.nextInt(TILE_SIZE - 8)
-            canvas.drawRect(gx.toFloat(), gy.toFloat(), (gx + 3).toFloat(), (gy + 3).toFloat(), p)
-        }
-    }
-
-    private fun drawLuminite(canvas: Canvas, ox: Int, oy: Int, rand: Random) {
+    private fun drawWater(pixels: IntArray, ox: Int, oy: Int, rand: Random) {
+        val baseR = 35; val baseG = 120; val baseB = 225
         for (y in 0 until TILE_SIZE) {
             for (x in 0 until TILE_SIZE) {
-                val noise = rand.nextInt(40)
-                val c = Color.rgb(30 + noise, 230 - noise, 220 - noise)
-                canvas.drawPoint((ox + x).toFloat(), (oy + y).toFloat(), Paint().apply { color = c })
+                val ripple = (sin(x * 0.4f + y * 0.3f) * 20).toInt()
+                val sparkle = if ((x * 7 + y * 13) % 19 == 0) 40 else 0
+                val r = (baseR + ripple + sparkle).coerceIn(15, 140)
+                val g = (baseG + ripple + sparkle).coerceIn(80, 210)
+                val b = (baseB + (ripple * 0.5f).toInt()).coerceIn(170, 255)
+                setTexel(pixels, ox, oy, x, y, rgba(r, g, b, 195))
             }
         }
     }
 
-    private fun drawStoneBricks(canvas: Canvas, ox: Int, oy: Int) {
-        val p = Paint().apply { color = Color.rgb(135, 135, 140) }
-        canvas.drawRect(ox.toFloat(), oy.toFloat(), (ox + TILE_SIZE).toFloat(), (oy + TILE_SIZE).toFloat(), p)
-        val seam = Paint().apply { color = Color.rgb(70, 70, 75) }
-        canvas.drawRect(ox.toFloat(), (oy + 16).toFloat(), (ox + TILE_SIZE).toFloat(), (oy + 17).toFloat(), seam)
-        canvas.drawRect((ox + 16).toFloat(), oy.toFloat(), (ox + 17).toFloat(), (oy + 16).toFloat(), seam)
-        canvas.drawRect((ox + 8).toFloat(), (oy + 16).toFloat(), (ox + 9).toFloat(), (oy + 32).toFloat(), seam)
-        canvas.drawRect((ox + 24).toFloat(), (oy + 16).toFloat(), (ox + 25).toFloat(), (oy + 32).toFloat(), seam)
+    private fun drawBedrock(pixels: IntArray, ox: Int, oy: Int, rand: Random) {
+        for (y in 0 until TILE_SIZE) {
+            for (x in 0 until TILE_SIZE) {
+                val noise = rand.nextInt(75)
+                setTexel(pixels, ox, oy, x, y, rgb(noise, noise, noise + 4))
+            }
+        }
     }
 
-    private fun drawCraftingTableTop(canvas: Canvas, ox: Int, oy: Int) {
-        val p = Paint().apply { color = Color.rgb(175, 125, 75) }
-        canvas.drawRect(ox.toFloat(), oy.toFloat(), (ox + TILE_SIZE).toFloat(), (oy + TILE_SIZE).toFloat(), p)
-        // 3x3 grid etched into wood
-        val line = Paint().apply { color = Color.rgb(85, 55, 30) }
-        canvas.drawRect((ox + 4).toFloat(), (oy + 4).toFloat(), (ox + 28).toFloat(), (oy + 28).toFloat(), Paint().apply {
-            color = Color.rgb(140, 95, 55)
-        })
-        canvas.drawRect((ox + 12).toFloat(), (oy + 4).toFloat(), (ox + 13).toFloat(), (oy + 28).toFloat(), line)
-        canvas.drawRect((ox + 20).toFloat(), (oy + 4).toFloat(), (ox + 21).toFloat(), (oy + 28).toFloat(), line)
-        canvas.drawRect((ox + 4).toFloat(), (oy + 12).toFloat(), (ox + 28).toFloat(), (oy + 13).toFloat(), line)
-        canvas.drawRect((ox + 4).toFloat(), (oy + 20).toFloat(), (ox + 28).toFloat(), (oy + 21).toFloat(), line)
-    }
+    private fun drawOre(pixels: IntArray, ox: Int, oy: Int, gemR: Int, gemG: Int, gemB: Int, rand: Random) {
+        drawStone(pixels, ox, oy, rand)
 
-    private fun drawCraftingTableSide(canvas: Canvas, ox: Int, oy: Int) {
-        drawWoodPlanks(canvas, ox, oy)
-        // Crossed hammer and chisel emblem
-        val p = Paint().apply { color = Color.rgb(60, 60, 65) }
-        canvas.drawRect((ox + 10).toFloat(), (oy + 10).toFloat(), (ox + 22).toFloat(), (oy + 22).toFloat(), p)
-    }
-
-    private fun drawFurnaceFront(canvas: Canvas, ox: Int, oy: Int) {
-        drawCobblestone(canvas, ox, oy, Random(12345))
-        // Arch opening
-        val p = Paint().apply { color = Color.rgb(30, 30, 30) }
-        canvas.drawRect((ox + 8).toFloat(), (oy + 12).toFloat(), (ox + 24).toFloat(), (oy + 26).toFloat(), p)
-        // Faint ember glow inside
-        val glow = Paint().apply { color = Color.rgb(180, 60, 20) }
-        canvas.drawRect((ox + 12).toFloat(), (oy + 20).toFloat(), (ox + 20).toFloat(), (oy + 25).toFloat(), glow)
-    }
-
-    private fun drawTorch(canvas: Canvas, ox: Int, oy: Int) {
-        // Transparent background
-        val bg = Paint().apply { color = Color.TRANSPARENT }
-        canvas.drawRect(ox.toFloat(), oy.toFloat(), (ox + TILE_SIZE).toFloat(), (oy + TILE_SIZE).toFloat(), bg)
-        // Wooden handle
-        val handle = Paint().apply { color = Color.rgb(130, 90, 50) }
-        canvas.drawRect((ox + 14).toFloat(), (oy + 12).toFloat(), (ox + 18).toFloat(), (oy + 28).toFloat(), handle)
-        // Bright flame
-        val flame = Paint().apply { color = Color.rgb(255, 170, 20) }
-        canvas.drawRect((ox + 13).toFloat(), (oy + 4).toFloat(), (ox + 19).toFloat(), (oy + 12).toFloat(), flame)
-        val core = Paint().apply { color = Color.rgb(255, 240, 120) }
-        canvas.drawRect((ox + 14).toFloat(), (oy + 6).toFloat(), (ox + 18).toFloat(), (oy + 10).toFloat(), core)
-    }
-
-    private fun drawBookshelf(canvas: Canvas, ox: Int, oy: Int, rand: Random) {
-        drawWoodPlanks(canvas, ox, oy)
-        // Two shelves with book spines
-        val bookColors = intArrayOf(
-            Color.rgb(180, 40, 40), Color.rgb(40, 110, 190),
-            Color.rgb(40, 160, 60), Color.rgb(180, 140, 30),
-            Color.rgb(140, 50, 160), Color.rgb(210, 110, 30)
+        // Multiple realistic ore crystal clusters
+        val spots = listOf(
+            Pair(7, 8), Pair(8, 9), Pair(9, 8), Pair(8, 7), Pair(9, 9),
+            Pair(20, 21), Pair(21, 22), Pair(22, 21), Pair(21, 20),
+            Pair(21, 8), Pair(22, 9), Pair(7, 22), Pair(8, 23)
         )
-        for (row in 0..1) {
-            val sy = oy + 4 + row * 14
-            var bx = ox + 4
-            while (bx < ox + 28) {
-                val bWidth = 2 + rand.nextInt(3)
-                val c = bookColors[rand.nextInt(bookColors.size)]
-                canvas.drawRect(bx.toFloat(), sy.toFloat(), (bx + bWidth).toFloat(), (sy + 10).toFloat(), Paint().apply { color = c })
-                bx += bWidth + 1
+
+        for (pt in spots) {
+            val hx = pt.first
+            val hy = pt.second
+            val highlight = rgb(
+                (gemR + 50).coerceIn(0, 255),
+                (gemG + 50).coerceIn(0, 255),
+                (gemB + 50).coerceIn(0, 255)
+            )
+            val shadow = rgb(
+                (gemR - 40).coerceIn(0, 255),
+                (gemG - 40).coerceIn(0, 255),
+                (gemB - 40).coerceIn(0, 255)
+            )
+            val baseGem = rgb(gemR, gemG, gemB)
+
+            setTexel(pixels, ox, oy, hx, hy, baseGem)
+            setTexel(pixels, ox, oy, hx - 1, hy, shadow)
+            setTexel(pixels, ox, oy, hx, hy - 1, highlight)
+        }
+    }
+
+    private fun drawLuminite(pixels: IntArray, ox: Int, oy: Int, rand: Random) {
+        drawStone(pixels, ox, oy, rand)
+        // Glowing cyan-gold core
+        for (y in 8 until 24) {
+            for (x in 8 until 24) {
+                val dx = x - 15.5f
+                val dy = y - 15.5f
+                val d = kotlin.math.sqrt(dx * dx + dy * dy)
+                if (d < 7f) {
+                    val bright = ((7f - d) * 35).toInt()
+                    setTexel(pixels, ox, oy, x, y, rgb(255, 235 - bright / 2, 80 + bright))
+                }
             }
         }
     }
 
-    private fun drawObsidian(canvas: Canvas, ox: Int, oy: Int, rand: Random) {
+    private fun drawStoneBricks(pixels: IntArray, ox: Int, oy: Int) {
+        val baseR = 140; val baseG = 140; val baseB = 145
+        val mortar = rgb(65, 65, 70)
+        val highlight = rgb(175, 175, 180)
+
+        for (y in 0 until TILE_SIZE) {
+            val row = y / 8
+            val isSeamY = y % 8 == 7
+            val isHighlightY = y % 8 == 0
+
+            for (x in 0 until TILE_SIZE) {
+                if (isSeamY) {
+                    setTexel(pixels, ox, oy, x, y, mortar)
+                } else if (isHighlightY) {
+                    setTexel(pixels, ox, oy, x, y, highlight)
+                } else {
+                    val seamX = if (row % 2 == 0) 15 else 7
+                    val seamX2 = if (row % 2 == 0) 31 else 23
+                    if (x == seamX || x == seamX2) {
+                        setTexel(pixels, ox, oy, x, y, mortar)
+                    } else if (x == seamX + 1 || x == seamX2 + 1) {
+                        setTexel(pixels, ox, oy, x, y, highlight)
+                    } else {
+                        val n = ((x * 5 + y * 11) % 7) * 4 - 12
+                        setTexel(pixels, ox, oy, x, y, rgb(baseR + n, baseG + n, baseB + n))
+                    }
+                }
+            }
+        }
+    }
+
+    private fun drawCraftingTableTop(pixels: IntArray, ox: Int, oy: Int) {
+        drawWoodPlanks(pixels, ox, oy)
+        // Grid square outline and tools
+        val gridColor = rgb(65, 45, 25)
+        for (i in 4 until 28) {
+            setTexel(pixels, ox, oy, i, 4, gridColor)
+            setTexel(pixels, ox, oy, i, 16, gridColor)
+            setTexel(pixels, ox, oy, i, 28, gridColor)
+            setTexel(pixels, ox, oy, 4, i, gridColor)
+            setTexel(pixels, ox, oy, 16, i, gridColor)
+            setTexel(pixels, ox, oy, 28, i, gridColor)
+        }
+    }
+
+    private fun drawCraftingTableSide(pixels: IntArray, ox: Int, oy: Int) {
+        drawWoodPlanks(pixels, ox, oy)
+        // Hammer and saw silhouette
+        val iron = rgb(215, 215, 220)
+        val handle = rgb(110, 75, 40)
+        for (i in 8..14) {
+            setTexel(pixels, ox, oy, 10, i, handle)
+            setTexel(pixels, ox, oy, 22, i, handle)
+        }
+        for (i in 8..13) {
+            setTexel(pixels, ox, oy, i, 7, iron)
+            setTexel(pixels, ox, oy, i + 12, 7, iron)
+        }
+    }
+
+    private fun drawFurnaceFront(pixels: IntArray, ox: Int, oy: Int) {
+        drawCobblestone(pixels, ox, oy, Random(123L))
+        // Smelting fire aperture
+        val fireR = 255; val fireG = 145; val fireB = 25
+        val coalR = 30; val coalG = 30; val coalB = 30
+        for (y in 14 until 26) {
+            for (x in 8 until 24) {
+                val isFire = y >= 20 || (x in 12..20 && y >= 17)
+                val c = if (isFire) rgb(fireR, fireG, fireB) else rgb(coalR, coalG, coalB)
+                setTexel(pixels, ox, oy, x, y, c)
+            }
+        }
+    }
+
+    private fun drawTorch(pixels: IntArray, ox: Int, oy: Int) {
         for (y in 0 until TILE_SIZE) {
             for (x in 0 until TILE_SIZE) {
-                val noise = rand.nextInt(25)
-                val c = Color.rgb(18 + noise / 2, 10 + noise / 3, 30 + noise)
-                canvas.drawPoint((ox + x).toFloat(), (oy + y).toFloat(), Paint().apply { color = c })
+                setTexel(pixels, ox, oy, x, y, rgba(0, 0, 0, 0))
+            }
+        }
+        // Wooden handle
+        val handle = rgb(135, 95, 50)
+        val handleShadow = rgb(95, 65, 35)
+        for (y in 14 until 30) {
+            for (x in 14..17) {
+                val col = if (x == 17) handleShadow else handle
+                setTexel(pixels, ox, oy, x, y, col)
+            }
+        }
+        // Glowing flame with warm yellow/orange/red gradient
+        for (y in 4..13) {
+            for (x in 12..19) {
+                val dx = x - 15.5f
+                val dy = y - 9.5f
+                if (dx * dx + dy * dy <= 16f) {
+                    val isCenter = (dx * dx + dy * dy <= 4f)
+                    val isTop = y <= 6
+                    val col = when {
+                        isCenter -> rgb(255, 255, 180)
+                        isTop -> rgb(255, 120, 20)
+                        else -> rgb(255, 195, 30)
+                    }
+                    setTexel(pixels, ox, oy, x, y, col)
+                }
             }
         }
     }
 
-    private fun drawClay(canvas: Canvas, ox: Int, oy: Int, rand: Random) {
+    private fun drawBookshelf(pixels: IntArray, ox: Int, oy: Int, rand: Random) {
+        drawWoodPlanks(pixels, ox, oy)
+        val spineColors = listOf(
+            rgb(180, 45, 45), // Crimson
+            rgb(45, 110, 180), // Sapphire
+            rgb(45, 160, 65), // Emerald
+            rgb(160, 140, 45), // Gold
+            rgb(120, 50, 150)  // Amethyst
+        )
+        // Two shelves of books
+        for (shelf in listOf(4, 18)) {
+            var bx = 3
+            var colorIdx = 0
+            while (bx < 28) {
+                val bookWidth = 2 + (bx % 2)
+                val bookColor = spineColors[colorIdx % spineColors.size]
+                colorIdx++
+                for (y in shelf until (shelf + 10)) {
+                    for (w in 0 until bookWidth) {
+                        setTexel(pixels, ox, oy, bx + w, y, bookColor)
+                    }
+                }
+                bx += bookWidth + 1
+            }
+        }
+    }
+
+    private fun drawObsidian(pixels: IntArray, ox: Int, oy: Int, rand: Random) {
+        val base = 25
         for (y in 0 until TILE_SIZE) {
             for (x in 0 until TILE_SIZE) {
-                val noise = rand.nextInt(18) - 9
-                val c = Color.rgb(160 + noise, 165 + noise, 175 + noise)
-                canvas.drawPoint((ox + x).toFloat(), (oy + y).toFloat(), Paint().apply { color = c })
+                val crystal = if ((x * 11 + y * 7) % 19 == 0) 35 else 0
+                val n = rand.nextInt(16) + crystal
+                setTexel(pixels, ox, oy, x, y, rgb(base + n, (base * 0.7f + n * 0.8f).toInt(), (base * 1.5f + n * 1.6f).toInt()))
             }
         }
     }
 
-    private fun drawCactusTop(canvas: Canvas, ox: Int, oy: Int) {
-        val p = Paint().apply { color = Color.rgb(45, 125, 45) }
-        canvas.drawRect(ox.toFloat(), oy.toFloat(), (ox + TILE_SIZE).toFloat(), (oy + TILE_SIZE).toFloat(), p)
-        val spine = Paint().apply { color = Color.rgb(220, 220, 140) }
-        canvas.drawCircle((ox + 16).toFloat(), (oy + 16).toFloat(), 3f, spine)
-    }
-
-    private fun drawCactusSide(canvas: Canvas, ox: Int, oy: Int, rand: Random) {
-        val p = Paint().apply { color = Color.rgb(40, 120, 40) }
-        canvas.drawRect(ox.toFloat(), oy.toFloat(), (ox + TILE_SIZE).toFloat(), (oy + TILE_SIZE).toFloat(), p)
-        // Vertical ribs
-        val darkRib = Paint().apply { color = Color.rgb(25, 80, 25) }
-        for (r in 0..3) {
-            val rx = ox + r * 8
-            canvas.drawRect(rx.toFloat(), oy.toFloat(), (rx + 2).toFloat(), (oy + TILE_SIZE).toFloat(), darkRib)
+    private fun drawClay(pixels: IntArray, ox: Int, oy: Int, rand: Random) {
+        val baseR = 155; val baseG = 160; val baseB = 168
+        for (y in 0 until TILE_SIZE) {
+            for (x in 0 until TILE_SIZE) {
+                val n = rand.nextInt(14) - 7
+                setTexel(pixels, ox, oy, x, y, rgb(baseR + n, baseG + n, baseB + n))
+            }
         }
     }
 
-    private fun drawTallGrass(canvas: Canvas, ox: Int, oy: Int, rand: Random) {
-        val clear = Paint().apply { color = Color.TRANSPARENT }
-        canvas.drawRect(ox.toFloat(), oy.toFloat(), (ox + TILE_SIZE).toFloat(), (oy + TILE_SIZE).toFloat(), clear)
-        val grass = Paint().apply { color = Color.rgb(65, 155, 45) }
-        for (b in 0..5) {
-            val bx = ox + 4 + b * 4
-            val h = 14 + rand.nextInt(12)
-            canvas.drawRect(bx.toFloat(), (oy + TILE_SIZE - h).toFloat(), (bx + 2).toFloat(), (oy + TILE_SIZE).toFloat(), grass)
+    private fun drawCactusTop(pixels: IntArray, ox: Int, oy: Int) {
+        val green = rgb(55, 135, 40)
+        val rim = rgb(35, 95, 25)
+        for (y in 0 until TILE_SIZE) {
+            for (x in 0 until TILE_SIZE) {
+                val isRim = x <= 2 || x >= 29 || y <= 2 || y >= 29
+                setTexel(pixels, ox, oy, x, y, if (isRim) rim else green)
+            }
         }
     }
 
-    private fun drawFlower(canvas: Canvas, ox: Int, oy: Int, petalColor: Int) {
-        val clear = Paint().apply { color = Color.TRANSPARENT }
-        canvas.drawRect(ox.toFloat(), oy.toFloat(), (ox + TILE_SIZE).toFloat(), (oy + TILE_SIZE).toFloat(), clear)
+    private fun drawCactusSide(pixels: IntArray, ox: Int, oy: Int, rand: Random) {
+        val green = rgb(65, 145, 48)
+        val rib = rgb(45, 110, 32)
+        val spine = rgb(240, 240, 210)
+
+        for (y in 0 until TILE_SIZE) {
+            for (x in 0 until TILE_SIZE) {
+                val isRib = x % 6 == 0
+                val isSpine = isRib && (y % 7 == 3)
+                val col = when {
+                    isSpine -> spine
+                    isRib -> rib
+                    else -> green
+                }
+                setTexel(pixels, ox, oy, x, y, col)
+            }
+        }
+    }
+
+    private fun drawTallGrass(pixels: IntArray, ox: Int, oy: Int, rand: Random) {
+        for (y in 0 until TILE_SIZE) {
+            for (x in 0 until TILE_SIZE) {
+                setTexel(pixels, ox, oy, x, y, rgba(0, 0, 0, 0))
+            }
+        }
+        val grassColor = rgb(75, 175, 50)
+        val stalkColor = rgb(55, 135, 35)
+
+        for (x in 4..27 step 3) {
+            val height = 18 + rand.nextInt(10)
+            for (y in (32 - height) until 32) {
+                setTexel(pixels, ox, oy, x, y, if (y > 26) stalkColor else grassColor)
+                if (y % 4 == 0 && x > 0) {
+                    setTexel(pixels, ox, oy, x - 1, y, grassColor)
+                }
+            }
+        }
+    }
+
+    private fun drawFlower(pixels: IntArray, ox: Int, oy: Int, petalR: Int, petalG: Int, petalB: Int) {
+        for (y in 0 until TILE_SIZE) {
+            for (x in 0 until TILE_SIZE) {
+                setTexel(pixels, ox, oy, x, y, rgba(0, 0, 0, 0))
+            }
+        }
+        val stem = rgb(65, 150, 45)
+        val petal = rgb(petalR, petalG, petalB)
+        val center = rgb(255, 235, 50)
+
         // Stem
-        val stem = Paint().apply { color = Color.rgb(50, 140, 40) }
-        canvas.drawRect((ox + 15).toFloat(), (oy + 14).toFloat(), (ox + 17).toFloat(), (oy + 30).toFloat(), stem)
-        // Petals
-        val petals = Paint().apply { color = petalColor }
-        canvas.drawCircle((ox + 16).toFloat(), (oy + 12).toFloat(), 6f, petals)
-        // Center
-        val center = Paint().apply { color = Color.rgb(255, 235, 60) }
-        canvas.drawCircle((ox + 16).toFloat(), (oy + 12).toFloat(), 2.5f, center)
+        for (y in 16 until 31) {
+            setTexel(pixels, ox, oy, 15, y, stem)
+            setTexel(pixels, ox, oy, 16, y, stem)
+        }
+        // Flower Petals
+        val cx = 15.5f
+        val cy = 13.5f
+        for (y in 8..19) {
+            for (x in 10..21) {
+                val dx = x - cx
+                val dy = y - cy
+                val dist = dx * dx + dy * dy
+                if (dist <= 24f) {
+                    val col = if (dist <= 4f) center else petal
+                    setTexel(pixels, ox, oy, x, y, col)
+                }
+            }
+        }
     }
 }

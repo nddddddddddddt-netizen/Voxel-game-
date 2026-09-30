@@ -1,7 +1,6 @@
 package com.example.blockhaven.render
 
 import android.opengl.GLES30
-import android.opengl.Matrix
 import com.example.blockhaven.core.math.Vec3f
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -28,9 +27,15 @@ class ParticleSystem {
     private var vao = 0
     private var vbo = 0
 
-    private val vertexData = FloatArray(500 * 6 * 7) // 500 max particles * 6 verts * 7 floats
+    private val maxParticles = 600
+    private val vertexData = FloatArray(maxParticles * 6 * 7) // 600 max particles * 6 verts * 7 floats
+    private lateinit var gpuBuffer: FloatBuffer
 
     fun init() {
+        gpuBuffer = ByteBuffer.allocateDirect(vertexData.size * 4)
+            .order(ByteOrder.nativeOrder())
+            .asFloatBuffer()
+
         val vShader = """
             #version 300 es
             layout(location = 0) in vec3 aPos;
@@ -76,24 +81,97 @@ class ParticleSystem {
         GLES30.glBindVertexArray(0)
     }
 
-    fun spawnBreakParticles(pos: Vec3f, r: Float, g: Float, b: Float, count: Int = 12) {
+    fun spawnBreakParticles(pos: Vec3f, r: Float, g: Float, b: Float, count: Int = 14) {
         for (i in 0 until count) {
-            if (particles.size >= 400) particles.removeAt(0)
+            if (particles.size >= maxParticles - 10) particles.removeAt(0)
             val p = Particle(
                 pos = pos + Vec3f(rand.nextFloat() * 0.8f + 0.1f, rand.nextFloat() * 0.8f + 0.1f, rand.nextFloat() * 0.8f + 0.1f),
                 vel = Vec3f(
-                    (rand.nextFloat() - 0.5f) * 4f,
-                    rand.nextFloat() * 4f + 1f,
-                    (rand.nextFloat() - 0.5f) * 4f
+                    (rand.nextFloat() - 0.5f) * 4.5f,
+                    rand.nextFloat() * 4f + 1.2f,
+                    (rand.nextFloat() - 0.5f) * 4.5f
                 ),
-                colorR = (r + (rand.nextFloat() - 0.5f) * 0.2f).coerceIn(0f, 1f),
-                colorG = (g + (rand.nextFloat() - 0.5f) * 0.2f).coerceIn(0f, 1f),
-                colorB = (b + (rand.nextFloat() - 0.5f) * 0.2f).coerceIn(0f, 1f),
+                colorR = (r + (rand.nextFloat() - 0.5f) * 0.15f).coerceIn(0f, 1f),
+                colorG = (g + (rand.nextFloat() - 0.5f) * 0.15f).coerceIn(0f, 1f),
+                colorB = (b + (rand.nextFloat() - 0.5f) * 0.15f).coerceIn(0f, 1f),
                 life = 0f,
-                maxLife = 0.6f + rand.nextFloat() * 0.4f,
-                size = 0.08f + rand.nextFloat() * 0.06f
+                maxLife = 0.5f + rand.nextFloat() * 0.4f,
+                size = 0.07f + rand.nextFloat() * 0.05f
             )
             particles.add(p)
+        }
+    }
+
+    fun spawnFootstep(pos: Vec3f, r: Float, g: Float, b: Float) {
+        for (i in 0..3) {
+            if (particles.size >= maxParticles - 10) particles.removeAt(0)
+            particles.add(
+                Particle(
+                    pos = pos + Vec3f((rand.nextFloat() - 0.5f) * 0.35f, 0.05f, (rand.nextFloat() - 0.5f) * 0.35f),
+                    vel = Vec3f((rand.nextFloat() - 0.5f) * 0.6f, rand.nextFloat() * 0.8f + 0.2f, (rand.nextFloat() - 0.5f) * 0.6f),
+                    colorR = r, colorG = g, colorB = b,
+                    life = 0f, maxLife = 0.35f, size = 0.045f
+                )
+            )
+        }
+    }
+
+    fun spawnWaterSplash(pos: Vec3f) {
+        for (i in 0..10) {
+            if (particles.size >= maxParticles - 10) particles.removeAt(0)
+            particles.add(
+                Particle(
+                    pos = pos + Vec3f((rand.nextFloat() - 0.5f) * 0.5f, 0.1f, (rand.nextFloat() - 0.5f) * 0.5f),
+                    vel = Vec3f((rand.nextFloat() - 0.5f) * 2.5f, rand.nextFloat() * 3f + 1.5f, (rand.nextFloat() - 0.5f) * 2.5f),
+                    colorR = 0.65f, colorG = 0.85f, colorB = 1.0f,
+                    life = 0f, maxLife = 0.5f, size = 0.05f
+                )
+            )
+        }
+    }
+
+    fun spawnHitSpark(pos: Vec3f) {
+        for (i in 0..8) {
+            if (particles.size >= maxParticles - 10) particles.removeAt(0)
+            particles.add(
+                Particle(
+                    pos = pos,
+                    vel = Vec3f((rand.nextFloat() - 0.5f) * 5f, rand.nextFloat() * 4f + 2f, (rand.nextFloat() - 0.5f) * 5f),
+                    colorR = 1.0f, colorG = 0.85f, colorB = 0.2f,
+                    life = 0f, maxLife = 0.3f, size = 0.06f
+                )
+            )
+        }
+    }
+
+    fun spawnWeather(center: Vec3f, rainStrength: Float, isSnow: Boolean = false) {
+        if (rainStrength <= 0.05f) return
+        val count = (12f * rainStrength).toInt().coerceIn(1, 16)
+        for (i in 0 until count) {
+            if (particles.size >= maxParticles - 10) particles.removeAt(0)
+            val rx = (rand.nextFloat() - 0.5f) * 28f
+            val rz = (rand.nextFloat() - 0.5f) * 28f
+            val ry = rand.nextFloat() * 12f + 8f
+
+            if (isSnow) {
+                particles.add(
+                    Particle(
+                        pos = center + Vec3f(rx, ry, rz),
+                        vel = Vec3f((rand.nextFloat() - 0.5f) * 1.5f, -2.5f, (rand.nextFloat() - 0.5f) * 1.5f),
+                        colorR = 0.95f, colorG = 0.98f, colorB = 1.0f,
+                        life = 0f, maxLife = 2.0f, size = 0.06f
+                    )
+                )
+            } else {
+                particles.add(
+                    Particle(
+                        pos = center + Vec3f(rx, ry, rz),
+                        vel = Vec3f(0f, -22f, 0f),
+                        colorR = 0.45f, colorG = 0.70f, colorB = 0.95f,
+                        life = 0f, maxLife = 0.65f, size = 0.04f
+                    )
+                )
+            }
         }
     }
 
@@ -107,7 +185,7 @@ class ParticleSystem {
                 continue
             }
             // Gravity
-            p.vel = Vec3f(p.vel.x * 0.95f, p.vel.y - 15f * dt, p.vel.z * 0.95f)
+            p.vel = Vec3f(p.vel.x * 0.95f, p.vel.y - 14f * dt, p.vel.z * 0.95f)
             p.pos = p.pos + p.vel * dt
         }
     }
@@ -117,13 +195,14 @@ class ParticleSystem {
 
         var idx = 0
         for (p in particles) {
+            if (idx + 42 >= vertexData.size) break
             val alpha = (1f - (p.life / p.maxLife)).coerceIn(0f, 1f)
             val s = p.size
             val x = p.pos.x
             val y = p.pos.y
             val z = p.pos.z
 
-            // Billboard quad facing camera
+            // Billboard quad facing camera (2 triangles, 6 vertices)
             // v0
             vertexData[idx++] = x - s; vertexData[idx++] = y - s; vertexData[idx++] = z
             vertexData[idx++] = p.colorR; vertexData[idx++] = p.colorG; vertexData[idx++] = p.colorB; vertexData[idx++] = alpha
@@ -152,12 +231,12 @@ class ParticleSystem {
         GLES30.glEnable(GLES30.GL_BLEND)
         GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
 
-        val buffer: FloatBuffer = ByteBuffer.allocateDirect(idx * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
-        buffer.put(vertexData, 0, idx).position(0)
+        gpuBuffer.clear()
+        gpuBuffer.put(vertexData, 0, idx).position(0)
 
         GLES30.glBindVertexArray(vao)
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, vbo)
-        GLES30.glBufferSubData(GLES30.GL_ARRAY_BUFFER, 0, idx * 4, buffer)
+        GLES30.glBufferSubData(GLES30.GL_ARRAY_BUFFER, 0, idx * 4, gpuBuffer)
 
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, vertCount)
 

@@ -24,18 +24,14 @@ class ChunkMesh(
     }
 }
 
-object ChunkMeshBuilder {
-    // Face normal directions: 0 = Top (+Y), 1 = Bottom (-Y), 2 = North (-Z), 3 = South (+Z), 4 = East (+X), 5 = West (-X)
-    private val FACE_NORMALS = arrayOf(
-        floatArrayOf(0f, 1f, 0f),   // Top
-        floatArrayOf(0f, -1f, 0f),  // Bottom
-        floatArrayOf(0f, 0f, -1f),  // North
-        floatArrayOf(0f, 0f, 1f),   // South
-        floatArrayOf(1f, 0f, 0f),   // East
-        floatArrayOf(-1f, 0f, 0f)   // West
-    )
+class RawChunkMeshData(
+    val opaqueData: FloatArray,
+    val opaqueLength: Int,
+    val transData: FloatArray,
+    val transLength: Int
+)
 
-    // Directional face lighting multipliers
+object ChunkMeshBuilder {
     private val FACE_LIGHTING = floatArrayOf(
         1.0f,   // Top
         0.55f,  // Bottom
@@ -45,47 +41,54 @@ object ChunkMeshBuilder {
         0.7f    // West
     )
 
-    // Reusable scratch float buffers to avoid GC pressure
-    private var opaqueData = FloatArray(16 * 16 * 128 * 6 * 4)
-    private var transData = FloatArray(16 * 16 * 32 * 6 * 4)
+    data class FaceAo(val ao0: Float, val ao1: Float, val ao2: Float, val ao3: Float)
 
-    fun build(chunk: Chunk, world: World): ChunkMesh? {
+    /**
+     * Phase 1: Pure CPU calculation (runs on background thread, no GL context needed)
+     * Features greedy row-merging to reduce vertex count.
+     */
+    fun buildRaw(chunk: Chunk, world: World): RawChunkMeshData? {
         val wx = chunk.chunkX * Chunk.WIDTH
         val wz = chunk.chunkZ * Chunk.DEPTH
 
+        var opaqueData = FloatArray(32000)
+        var transData = FloatArray(16000)
         var oIndex = 0
         var tIndex = 0
 
-        // Ensure arrays are large enough
-        if (opaqueData.size < 60000) opaqueData = FloatArray(100000)
-        if (transData.size < 30000) transData = FloatArray(50000)
+        for (face in 0..5) {
+            val lightMultiplier = FACE_LIGHTING[face]
 
-        for (x in 0 until Chunk.WIDTH) {
-            for (z in 0 until Chunk.DEPTH) {
-                for (y in 0 until Chunk.HEIGHT) {
-                    val blockId = chunk.getBlock(x, y, z)
-                    if (blockId == BlockType.AIR) continue
-
-                    val def = BlockType.get(blockId)
-                    val bx = (wx + x).toFloat()
-                    val by = y.toFloat()
-                    val bz = (wz + z).toFloat()
-
-                    val isTrans = def.isTransparent || def.isLiquid
-
-                    if (def.isPlant) {
-                        // Render crossed quads for plants (tall grass, flowers)
-                        val uv = TextureAtlas.getUV(def.textureSide)
-                        val light = computeVoxelLight(chunk, world, x, y, z, 0)
-                        if (tIndex + 48 >= transData.size) {
-                            transData = transData.copyOf(transData.size * 2)
+            for (y in 0 until Chunk.HEIGHT) {
+                for (z in 0 until Chunk.DEPTH) {
+                    var x = 0
+                    while (x < Chunk.WIDTH) {
+                        val blockId = chunk.getBlock(x, y, z)
+                        if (blockId == BlockType.AIR) {
+                            x++
+                            continue
                         }
-                        tIndex = addCrossedQuads(transData, tIndex, bx, by, bz, uv, light)
-                        continue
-                    }
 
-                    // Check all 6 faces: Top, Bottom, North, South, East, West
-                    for (face in 0..5) {
+                        val def = BlockType.get(blockId)
+                        val isTrans = def.isTransparent || def.isLiquid
+
+                        if (def.isPlant) {
+                            if (face == 0) { // Only add plants once
+                                val uv = TextureAtlas.getUV(def.textureSide)
+                                val light = computeVoxelLight(chunk, world, x, y, z, 0)
+                                if (tIndex + 48 >= transData.size) {
+                                    transData = transData.copyOf(transData.size * 2)
+                                }
+                                val bx = (wx + x).toFloat()
+                                val by = y.toFloat()
+                                val bz = (wz + z).toFloat()
+                                tIndex = addCrossedQuads(transData, tIndex, bx, by, bz, uv, light)
+                            }
+                            x++
+                            continue
+                        }
+
+                        // Check face visibility
                         val nx = x + when (face) { 4 -> 1; 5 -> -1; else -> 0 }
                         val ny = y + when (face) { 0 -> 1; 1 -> -1; else -> 0 }
                         val nz = z + when (face) { 3 -> 1; 2 -> -1; else -> 0 }
@@ -96,18 +99,18 @@ object ChunkMeshBuilder {
                             world.getBlock(wx + nx, ny, wz + nz)
                         }
 
-                        var shouldRenderFace = false
-                        if (def.isLiquid) {
-                            // Water only renders against air or different non-water blocks
-                            shouldRenderFace = neighborBlock != BlockType.WATER && (!BlockType.isSolid(neighborBlock) || BlockType.isTransparent(neighborBlock))
+                        val shouldRenderFace = if (def.isLiquid) {
+                            neighborBlock != BlockType.WATER && (!BlockType.isSolid(neighborBlock) || BlockType.isTransparent(neighborBlock))
                         } else if (def.isTransparent) {
-                            shouldRenderFace = neighborBlock != blockId && (!BlockType.isSolid(neighborBlock) || BlockType.isTransparent(neighborBlock))
+                            neighborBlock != blockId && (!BlockType.isSolid(neighborBlock) || BlockType.isTransparent(neighborBlock))
                         } else {
-                            // Opaque block: only render face if neighbor is not solid or is transparent
-                            shouldRenderFace = !BlockType.isSolid(neighborBlock) || BlockType.isTransparent(neighborBlock)
+                            !BlockType.isSolid(neighborBlock) || BlockType.isTransparent(neighborBlock)
                         }
 
-                        if (!shouldRenderFace) continue
+                        if (!shouldRenderFace) {
+                            x++
+                            continue
+                        }
 
                         val tile = when (face) {
                             0 -> def.textureTop
@@ -115,43 +118,71 @@ object ChunkMeshBuilder {
                             else -> def.textureSide
                         }
                         val uv = TextureAtlas.getUV(tile)
-                        val faceLight = computeVoxelLight(chunk, world, x, y, z, face) * FACE_LIGHTING[face]
-
-                        // Compute Smooth Ambient Occlusion for each corner
-                        val (ao0, ao1, ao2, ao3) = if (!def.isLiquid) {
+                        val faceLight = computeVoxelLight(chunk, world, x, y, z, face) * lightMultiplier
+                        val faceAo = if (!def.isLiquid) {
                             computeFaceAo(chunk, world, wx, wz, x, y, z, face)
                         } else {
                             FaceAo(1f, 1f, 1f, 1f)
                         }
 
+                        // Greedy Run-Length along X axis for faces 0, 1, 2, 3
+                        var run = 1
+                        if (face in 0..3 && !def.isLiquid) {
+                            while (x + run < Chunk.WIDTH) {
+                                val nextB = chunk.getBlock(x + run, y, z)
+                                if (nextB != blockId) break
+
+                                val nnx = (x + run) + when (face) { 4 -> 1; 5 -> -1; else -> 0 }
+                                val nny = y + when (face) { 0 -> 1; 1 -> -1; else -> 0 }
+                                val nnz = z + when (face) { 3 -> 1; 2 -> -1; else -> 0 }
+                                val nextNeighbor = if (Chunk.isValidPos(nnx, nny, nnz)) chunk.getBlock(nnx, nny, nnz) else world.getBlock(wx + nnx, nny, wz + nnz)
+                                val nextShouldRender = !BlockType.isSolid(nextNeighbor) || BlockType.isTransparent(nextNeighbor)
+                                if (!nextShouldRender) break
+
+                                val nextAo = computeFaceAo(chunk, world, wx, wz, x + run, y, z, face)
+                                if (nextAo != faceAo) break
+
+                                run++
+                            }
+                        }
+
+                        val bx = (wx + x).toFloat()
+                        val by = y.toFloat()
+                        val bz = (wz + z).toFloat()
                         val faceMarker = if (def.isLiquid) 10f else face.toFloat()
 
                         if (isTrans) {
                             if (tIndex + 48 >= transData.size) {
                                 transData = transData.copyOf(transData.size * 2)
                             }
-                            tIndex = addFace(transData, tIndex, bx, by, bz, face, uv, faceLight, ao0, ao1, ao2, ao3, faceMarker)
+                            tIndex = addGreedyFace(transData, tIndex, bx, by, bz, run.toFloat(), face, uv, faceLight, faceAo, faceMarker)
                         } else {
                             if (oIndex + 48 >= opaqueData.size) {
                                 opaqueData = opaqueData.copyOf(opaqueData.size * 2)
                             }
-                            oIndex = addFace(opaqueData, oIndex, bx, by, bz, face, uv, faceLight, ao0, ao1, ao2, ao3, faceMarker)
+                            oIndex = addGreedyFace(opaqueData, oIndex, bx, by, bz, run.toFloat(), face, uv, faceLight, faceAo, faceMarker)
                         }
+
+                        x += run
                     }
                 }
             }
         }
 
-        // Upload to OpenGL buffers
-        val oCount = oIndex / 8
-        val tCount = tIndex / 8
+        if (oIndex == 0 && tIndex == 0) return null
+        return RawChunkMeshData(opaqueData, oIndex, transData, tIndex)
+    }
 
-        if (oCount == 0 && tCount == 0) return null
+    /**
+     * Phase 2: Uploads prepared float array to OpenGL buffers (called on GL Thread in microseconds)
+     */
+    fun upload(raw: RawChunkMeshData): ChunkMesh {
+        val oCount = raw.opaqueLength / 8
+        val tCount = raw.transLength / 8
 
-        val oBuffers = uploadMesh(opaqueData, oIndex)
-        val tBuffers = uploadMesh(transData, tIndex)
+        val oBuffers = uploadMesh(raw.opaqueData, raw.opaqueLength)
+        val tBuffers = uploadMesh(raw.transData, raw.transLength)
 
-        chunk.isMeshDirty = false
         return ChunkMesh(
             opaqueVao = oBuffers.first,
             opaqueVbo = oBuffers.second,
@@ -162,20 +193,14 @@ object ChunkMeshBuilder {
         )
     }
 
-    private fun computeVoxelLight(chunk: Chunk, world: World, lx: Int, ly: Int, lz: Int, face: Int): Float {
-        val nx = lx + when (face) { 4 -> 1; 5 -> -1; else -> 0 }
-        val ny = (ly + when (face) { 0 -> 1; 1 -> -1; else -> 0 }).coerceIn(0, Chunk.HEIGHT - 1)
-        val nz = lz + when (face) { 3 -> 1; 2 -> -1; else -> 0 }
-
-        val sun = if (Chunk.isValidPos(nx, ny, nz)) chunk.getSunlight(nx, ny, nz) else 15
-        val blockL = if (Chunk.isValidPos(nx, ny, nz)) chunk.getBlockLight(nx, ny, nz) else 0
-
-        val sunFactor = (sun / 15f) * world.daylightFactor
-        val blockFactor = blockL / 15f
-        return (sunFactor + blockFactor).coerceIn(0.12f, 1.0f)
+    /**
+     * Synchronous build for direct rendering fallback
+     */
+    fun build(chunk: Chunk, world: World): ChunkMesh? {
+        val raw = buildRaw(chunk, world) ?: return null
+        chunk.isMeshDirty = false
+        return upload(raw)
     }
-
-    data class FaceAo(val ao0: Float, val ao1: Float, val ao2: Float, val ao3: Float)
 
     private fun isOccluding(chunk: Chunk, world: World, wx: Int, wz: Int, x: Int, y: Int, z: Int): Boolean {
         if (y !in 0 until Chunk.HEIGHT) return false
@@ -272,59 +297,65 @@ object ChunkMeshBuilder {
         }
     }
 
-    private fun addFace(
+    private fun computeVoxelLight(chunk: Chunk, world: World, lx: Int, ly: Int, lz: Int, face: Int): Float {
+        val nx = lx + when (face) { 4 -> 1; 5 -> -1; else -> 0 }
+        val ny = (ly + when (face) { 0 -> 1; 1 -> -1; else -> 0 }).coerceIn(0, Chunk.HEIGHT - 1)
+        val nz = lz + when (face) { 3 -> 1; 2 -> -1; else -> 0 }
+
+        val sun = if (Chunk.isValidPos(nx, ny, nz)) chunk.getSunlight(nx, ny, nz) else 15
+        val blockL = if (Chunk.isValidPos(nx, ny, nz)) chunk.getBlockLight(nx, ny, nz) else 0
+
+        val sunFactor = (sun / 15f) * world.daylightFactor
+        val blockFactor = blockL / 15f
+        return (sunFactor + blockFactor).coerceIn(0.12f, 1.0f)
+    }
+
+    private fun addGreedyFace(
         data: FloatArray, offset: Int,
-        x: Float, y: Float, z: Float,
+        x: Float, y: Float, z: Float, width: Float,
         face: Int, uv: FloatArray, light: Float,
-        ao0: Float, ao1: Float, ao2: Float, ao3: Float,
-        faceMarker: Float
+        ao: FaceAo, faceMarker: Float
     ): Int {
         var idx = offset
         val u0 = uv[0]; val v0 = uv[1]; val u1 = uv[2]; val v1 = uv[3]
         val fn = faceMarker
+        val ao0 = ao.ao0; val ao1 = ao.ao1; val ao2 = ao.ao2; val ao3 = ao.ao3
 
-        // 2 Triangles (6 vertices) per quad face with per-vertex AO
         when (face) {
             0 -> { // Top (+Y)
-                // v0: (x, y+1, z)
                 data[idx++] = x; data[idx++] = y + 1f; data[idx++] = z; data[idx++] = u0; data[idx++] = v0; data[idx++] = ao0; data[idx++] = light; data[idx++] = fn
-                // v1: (x, y+1, z+1)
                 data[idx++] = x; data[idx++] = y + 1f; data[idx++] = z + 1f; data[idx++] = u0; data[idx++] = v1; data[idx++] = ao1; data[idx++] = light; data[idx++] = fn
-                // v2: (x+1, y+1, z+1)
-                data[idx++] = x + 1f; data[idx++] = y + 1f; data[idx++] = z + 1f; data[idx++] = u1; data[idx++] = v1; data[idx++] = ao2; data[idx++] = light; data[idx++] = fn
+                data[idx++] = x + width; data[idx++] = y + 1f; data[idx++] = z + 1f; data[idx++] = u1; data[idx++] = v1; data[idx++] = ao2; data[idx++] = light; data[idx++] = fn
 
-                // v0
                 data[idx++] = x; data[idx++] = y + 1f; data[idx++] = z; data[idx++] = u0; data[idx++] = v0; data[idx++] = ao0; data[idx++] = light; data[idx++] = fn
-                // v2
-                data[idx++] = x + 1f; data[idx++] = y + 1f; data[idx++] = z + 1f; data[idx++] = u1; data[idx++] = v1; data[idx++] = ao2; data[idx++] = light; data[idx++] = fn
-                // v3: (x+1, y+1, z)
-                data[idx++] = x + 1f; data[idx++] = y + 1f; data[idx++] = z; data[idx++] = u1; data[idx++] = v0; data[idx++] = ao3; data[idx++] = light; data[idx++] = fn
+                data[idx++] = x + width; data[idx++] = y + 1f; data[idx++] = z + 1f; data[idx++] = u1; data[idx++] = v1; data[idx++] = ao2; data[idx++] = light; data[idx++] = fn
+                data[idx++] = x + width; data[idx++] = y + 1f; data[idx++] = z; data[idx++] = u1; data[idx++] = v0; data[idx++] = ao3; data[idx++] = light; data[idx++] = fn
             }
             1 -> { // Bottom (-Y)
                 data[idx++] = x; data[idx++] = y; data[idx++] = z + 1f; data[idx++] = u0; data[idx++] = v0; data[idx++] = ao0; data[idx++] = light; data[idx++] = fn
                 data[idx++] = x; data[idx++] = y; data[idx++] = z; data[idx++] = u0; data[idx++] = v1; data[idx++] = ao1; data[idx++] = light; data[idx++] = fn
-                data[idx++] = x + 1f; data[idx++] = y; data[idx++] = z; data[idx++] = u1; data[idx++] = v1; data[idx++] = ao2; data[idx++] = light; data[idx++] = fn
+                data[idx++] = x + width; data[idx++] = y; data[idx++] = z; data[idx++] = u1; data[idx++] = v1; data[idx++] = ao2; data[idx++] = light; data[idx++] = fn
 
                 data[idx++] = x; data[idx++] = y; data[idx++] = z + 1f; data[idx++] = u0; data[idx++] = v0; data[idx++] = ao0; data[idx++] = light; data[idx++] = fn
-                data[idx++] = x + 1f; data[idx++] = y; data[idx++] = z; data[idx++] = u1; data[idx++] = v1; data[idx++] = ao2; data[idx++] = light; data[idx++] = fn
-                data[idx++] = x + 1f; data[idx++] = y; data[idx++] = z + 1f; data[idx++] = u1; data[idx++] = v0; data[idx++] = ao3; data[idx++] = light; data[idx++] = fn
+                data[idx++] = x + width; data[idx++] = y; data[idx++] = z; data[idx++] = u1; data[idx++] = v1; data[idx++] = ao2; data[idx++] = light; data[idx++] = fn
+                data[idx++] = x + width; data[idx++] = y; data[idx++] = z + 1f; data[idx++] = u1; data[idx++] = v0; data[idx++] = ao3; data[idx++] = light; data[idx++] = fn
             }
             2 -> { // North (-Z)
-                data[idx++] = x + 1f; data[idx++] = y; data[idx++] = z; data[idx++] = u0; data[idx++] = v1; data[idx++] = ao0; data[idx++] = light; data[idx++] = fn
+                data[idx++] = x + width; data[idx++] = y; data[idx++] = z; data[idx++] = u0; data[idx++] = v1; data[idx++] = ao0; data[idx++] = light; data[idx++] = fn
                 data[idx++] = x; data[idx++] = y; data[idx++] = z; data[idx++] = u1; data[idx++] = v1; data[idx++] = ao1; data[idx++] = light; data[idx++] = fn
                 data[idx++] = x; data[idx++] = y + 1f; data[idx++] = z; data[idx++] = u1; data[idx++] = v0; data[idx++] = ao2; data[idx++] = light; data[idx++] = fn
 
-                data[idx++] = x + 1f; data[idx++] = y; data[idx++] = z; data[idx++] = u0; data[idx++] = v1; data[idx++] = ao0; data[idx++] = light; data[idx++] = fn
+                data[idx++] = x + width; data[idx++] = y; data[idx++] = z; data[idx++] = u0; data[idx++] = v1; data[idx++] = ao0; data[idx++] = light; data[idx++] = fn
                 data[idx++] = x; data[idx++] = y + 1f; data[idx++] = z; data[idx++] = u1; data[idx++] = v0; data[idx++] = ao2; data[idx++] = light; data[idx++] = fn
-                data[idx++] = x + 1f; data[idx++] = y + 1f; data[idx++] = z; data[idx++] = u0; data[idx++] = v0; data[idx++] = ao3; data[idx++] = light; data[idx++] = fn
+                data[idx++] = x + width; data[idx++] = y + 1f; data[idx++] = z; data[idx++] = u0; data[idx++] = v0; data[idx++] = ao3; data[idx++] = light; data[idx++] = fn
             }
             3 -> { // South (+Z)
                 data[idx++] = x; data[idx++] = y; data[idx++] = z + 1f; data[idx++] = u0; data[idx++] = v1; data[idx++] = ao0; data[idx++] = light; data[idx++] = fn
-                data[idx++] = x + 1f; data[idx++] = y; data[idx++] = z + 1f; data[idx++] = u1; data[idx++] = v1; data[idx++] = ao1; data[idx++] = light; data[idx++] = fn
-                data[idx++] = x + 1f; data[idx++] = y + 1f; data[idx++] = z + 1f; data[idx++] = u1; data[idx++] = v0; data[idx++] = ao2; data[idx++] = light; data[idx++] = fn
+                data[idx++] = x + width; data[idx++] = y; data[idx++] = z + 1f; data[idx++] = u1; data[idx++] = v1; data[idx++] = ao1; data[idx++] = light; data[idx++] = fn
+                data[idx++] = x + width; data[idx++] = y + 1f; data[idx++] = z + 1f; data[idx++] = u1; data[idx++] = v0; data[idx++] = ao2; data[idx++] = light; data[idx++] = fn
 
                 data[idx++] = x; data[idx++] = y; data[idx++] = z + 1f; data[idx++] = u0; data[idx++] = v1; data[idx++] = ao0; data[idx++] = light; data[idx++] = fn
-                data[idx++] = x + 1f; data[idx++] = y + 1f; data[idx++] = z + 1f; data[idx++] = u1; data[idx++] = v0; data[idx++] = ao2; data[idx++] = light; data[idx++] = fn
+                data[idx++] = x + width; data[idx++] = y + 1f; data[idx++] = z + 1f; data[idx++] = u1; data[idx++] = v0; data[idx++] = ao2; data[idx++] = light; data[idx++] = fn
                 data[idx++] = x; data[idx++] = y + 1f; data[idx++] = z + 1f; data[idx++] = u0; data[idx++] = v0; data[idx++] = ao3; data[idx++] = light; data[idx++] = fn
             }
             4 -> { // East (+X)
@@ -336,7 +367,7 @@ object ChunkMeshBuilder {
                 data[idx++] = x + 1f; data[idx++] = y + 1f; data[idx++] = z; data[idx++] = u1; data[idx++] = v0; data[idx++] = ao2; data[idx++] = light; data[idx++] = fn
                 data[idx++] = x + 1f; data[idx++] = y + 1f; data[idx++] = z + 1f; data[idx++] = u0; data[idx++] = v0; data[idx++] = ao3; data[idx++] = light; data[idx++] = fn
             }
-            5 -> { // West (-X)
+            else -> { // West (-X)
                 data[idx++] = x; data[idx++] = y; data[idx++] = z; data[idx++] = u0; data[idx++] = v1; data[idx++] = ao0; data[idx++] = light; data[idx++] = fn
                 data[idx++] = x; data[idx++] = y; data[idx++] = z + 1f; data[idx++] = u1; data[idx++] = v1; data[idx++] = ao1; data[idx++] = light; data[idx++] = fn
                 data[idx++] = x; data[idx++] = y + 1f; data[idx++] = z + 1f; data[idx++] = u1; data[idx++] = v0; data[idx++] = ao2; data[idx++] = light; data[idx++] = fn
@@ -354,7 +385,6 @@ object ChunkMeshBuilder {
         val u0 = uv[0]; val v0 = uv[1]; val u1 = uv[2]; val v1 = uv[3]
         val fn = 0f
 
-        // Diagonal 1: (x, z) to (x+1, z+1)
         data[idx++] = x; data[idx++] = y; data[idx++] = z; data[idx++] = u0; data[idx++] = v1; data[idx++] = 1f; data[idx++] = light; data[idx++] = fn
         data[idx++] = x + 1f; data[idx++] = y; data[idx++] = z + 1f; data[idx++] = u1; data[idx++] = v1; data[idx++] = 1f; data[idx++] = light; data[idx++] = fn
         data[idx++] = x + 1f; data[idx++] = y + 1f; data[idx++] = z + 1f; data[idx++] = u1; data[idx++] = v0; data[idx++] = 1f; data[idx++] = light; data[idx++] = fn
@@ -363,7 +393,6 @@ object ChunkMeshBuilder {
         data[idx++] = x + 1f; data[idx++] = y + 1f; data[idx++] = z + 1f; data[idx++] = u1; data[idx++] = v0; data[idx++] = 1f; data[idx++] = light; data[idx++] = fn
         data[idx++] = x; data[idx++] = y + 1f; data[idx++] = z; data[idx++] = u0; data[idx++] = v0; data[idx++] = 1f; data[idx++] = light; data[idx++] = fn
 
-        // Diagonal 2: (x+1, z) to (x, z+1)
         data[idx++] = x + 1f; data[idx++] = y; data[idx++] = z; data[idx++] = u0; data[idx++] = v1; data[idx++] = 1f; data[idx++] = light; data[idx++] = fn
         data[idx++] = x; data[idx++] = y; data[idx++] = z + 1f; data[idx++] = u1; data[idx++] = v1; data[idx++] = 1f; data[idx++] = light; data[idx++] = fn
         data[idx++] = x; data[idx++] = y + 1f; data[idx++] = z + 1f; data[idx++] = u1; data[idx++] = v0; data[idx++] = 1f; data[idx++] = light; data[idx++] = fn
@@ -396,17 +425,14 @@ object ChunkMeshBuilder {
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, vbo)
         GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, length * 4, buffer, GLES30.GL_STATIC_DRAW)
 
-        val stride = 8 * 4 // 8 floats: x, y, z, u, v, ao, light, faceNormal
+        val stride = 8 * 4 // x, y, z, u, v, ao, light, faceNormal
 
-        // Position: attribute 0 (3 floats)
         GLES30.glEnableVertexAttribArray(0)
         GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, stride, 0)
 
-        // UV: attribute 1 (2 floats)
         GLES30.glEnableVertexAttribArray(1)
         GLES30.glVertexAttribPointer(1, 2, GLES30.GL_FLOAT, false, stride, 3 * 4)
 
-        // AO & Light & Normal: attribute 2 (3 floats)
         GLES30.glEnableVertexAttribArray(2)
         GLES30.glVertexAttribPointer(2, 3, GLES30.GL_FLOAT, false, stride, 5 * 4)
 

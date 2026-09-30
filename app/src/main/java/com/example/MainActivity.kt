@@ -149,6 +149,8 @@ fun BlockhavenAppRoot(
                 onStartGame = { worldId, seed, name, mode ->
                     val world = World(seed, scope).apply {
                         renderDistance = settings.renderDistance
+                        this.worldId = worldId
+                        this.saveRepository = repository
                     }
                     val safeSpawn = world.findSafeSpawn(8.5f, 8.5f)
                     val player = Player(safeSpawn).apply {

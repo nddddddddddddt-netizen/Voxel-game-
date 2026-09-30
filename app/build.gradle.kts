@@ -1,4 +1,5 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.util.Base64
 
 plugins {
   alias(libs.plugins.android.application)
@@ -26,6 +27,16 @@ android {
   val customKeystoreFile = file(customKeystorePath)
   val hasCustomKeystore = customKeystoreFile.exists() && System.getenv("STORE_PASSWORD") != null
 
+  val debugKeyFile = file("${rootDir}/debug.keystore")
+  if (!debugKeyFile.exists()) {
+    val b64File = file("${rootDir}/debug.keystore.base64")
+    if (b64File.exists()) {
+      val b64 = b64File.readText().trim()
+      val bytes = Base64.getDecoder().decode(b64)
+      debugKeyFile.writeBytes(bytes)
+    }
+  }
+
   signingConfigs {
     create("release") {
       if (hasCustomKeystore) {
@@ -35,14 +46,14 @@ android {
         keyPassword = System.getenv("KEY_PASSWORD") ?: System.getenv("STORE_PASSWORD")
       } else {
         // Fallback to debug keystore so release builds are always signed and installable out of the box
-        storeFile = file("${rootDir}/debug.keystore")
+        storeFile = debugKeyFile
         storePassword = "android"
         keyAlias = "androiddebugkey"
         keyPassword = "android"
       }
     }
     create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
+      storeFile = debugKeyFile
       storePassword = "android"
       keyAlias = "androiddebugkey"
       keyPassword = "android"

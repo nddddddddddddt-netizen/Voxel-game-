@@ -8,6 +8,7 @@ class WorldGenerator(val seed: Long) {
     private val caveNoise = FastNoise(seed xor 0x3333CCCC)
     private val tempNoise = FastNoise(seed xor 0x0F0F0F0F)
     private val moistureNoise = FastNoise(seed xor 0xF0F0F0F0)
+    private val riverNoise = FastNoise(seed xor 0x7777BBBB)
 
     fun getBiomeAt(worldX: Int, worldZ: Int): BiomeType {
         val t = (tempNoise.fractal2D(worldX * 0.002f, worldZ * 0.002f, 2) + 1f) * 0.5f
@@ -35,7 +36,17 @@ class WorldGenerator(val seed: Long) {
                 val detN = detailNoise.fractal2D(wx * 0.025f, wz * 0.025f, 2) * 0.25f
 
                 val rawH = biome.baseHeight + (baseN * biome.heightVariation) + (detN * 8f)
-                val h = rawH.toInt().coerceIn(4, Chunk.HEIGHT - 8)
+                var h = rawH.toInt().coerceIn(4, Chunk.HEIGHT - 8)
+
+                // Winding river valley carving
+                val rSample = kotlin.math.abs(riverNoise.fractal2D(wx * 0.0035f, wz * 0.0035f, 2))
+                val riverThreshold = 0.040f
+                if (rSample < riverThreshold) {
+                    val riverRatio = rSample / riverThreshold // 0 at center, 1 at edge
+                    val carveDepth = (1f - riverRatio) * (1f - riverRatio) * 16f
+                    val carvedH = (h - carveDepth.toInt()).coerceAtLeast(Chunk.SEA_LEVEL - 3)
+                    h = kotlin.math.min(h, carvedH)
+                }
                 heightMap[idx] = h
             }
         }

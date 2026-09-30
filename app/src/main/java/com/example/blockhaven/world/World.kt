@@ -14,16 +14,25 @@ class World(val seed: Long = 123456789L, val worldScope: CoroutineScope) {
     val generator = WorldGenerator(seed)
     val chunks = ConcurrentHashMap<Long, Chunk>()
 
+    var worldId: Long = 1L
+    var saveRepository: com.example.blockhaven.storage.WorldSaveRepository? = null
+
     var renderDistance = 4
     var timeOfDay = 6000f // 0 = dawn, 6000 = noon, 12000 = sunset, 18000 = midnight
     val dayDurationTicks = 24000f
+
+    // Weather state
+    var isRaining: Boolean = false
+    var rainStrength: Float = 0f
+    private var weatherTimer: Float = 0f
 
     // Sky illumination factor based on time of day (0.15 at night to 1.0 at high noon)
     val daylightFactor: Float
         get() {
             val angle = (timeOfDay / dayDurationTicks) * 2f * Math.PI.toFloat()
             val cosVal = kotlin.math.cos(angle - Math.PI.toFloat() * 0.5f)
-            return (cosVal * 0.45f + 0.55f).coerceIn(0.18f, 1.0f)
+            val base = (cosVal * 0.45f + 0.55f).coerceIn(0.18f, 1.0f)
+            return (base * (1f - rainStrength * 0.35f)).coerceIn(0.12f, 1.0f)
         }
 
     fun chunkKey(cx: Int, cz: Int): Long = (cx.toLong() shl 32) or (cz.toLong() and 0xFFFFFFFFL)
@@ -35,6 +44,12 @@ class World(val seed: Long = 123456789L, val worldScope: CoroutineScope) {
         return chunks.computeIfAbsent(key) {
             val c = Chunk(cx, cz)
             generator.generateChunk(c)
+            saveRepository?.let { repo ->
+                worldScope.launch(Dispatchers.IO) {
+                    repo.loadChunkDeltas(worldId, c)
+                    c.isMeshDirty = true
+                }
+            }
             c
         }
     }
@@ -134,6 +149,9 @@ class World(val seed: Long = 123456789L, val worldScope: CoroutineScope) {
                 val dz = chunk.chunkZ - centerCZ
                 if (dx * dx + dz * dz > maxUnloadDistSq) {
                     keysToRemove.add(key)
+                    if (chunk.isModified.get()) {
+                        saveRepository?.saveChunkDeltaDirect(worldId, chunk)
+                    }
                 }
             }
             for (key in keysToRemove) {
@@ -145,6 +163,21 @@ class World(val seed: Long = 123456789L, val worldScope: CoroutineScope) {
     fun tick(deltaTime: Float) {
         // 24000 ticks in full day, e.g. 60 ticks per sec in standard rate
         timeOfDay = (timeOfDay + deltaTime * 20f) % dayDurationTicks
+
+        // Weather transitions (occasional rain/storm cycle)
+        weatherTimer += deltaTime
+        if (weatherTimer > 300f) { // every 5 minutes toggle chance
+            weatherTimer = 0f
+            if (!isRaining && kotlin.random.Random.nextFloat() < 0.35f) {
+                isRaining = true
+            } else if (isRaining && kotlin.random.Random.nextFloat() < 0.5f) {
+                isRaining = false
+            }
+        }
+
+        // Smooth rain transition
+        val targetRain = if (isRaining) 1.0f else 0.0f
+        rainStrength += (targetRain - rainStrength) * (deltaTime * 0.5f).coerceAtMost(1f)
     }
 
     /**

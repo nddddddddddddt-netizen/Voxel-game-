@@ -103,4 +103,34 @@ object BlockType {
     fun isLiquid(id: Short): Boolean = get(id).isLiquid
     fun isPlant(id: Short): Boolean = get(id).isPlant
     fun getLight(id: Short): Int = get(id).lightEmission
+
+    fun getParticleColor(id: Short): FloatArray {
+        return when (id) {
+            GRASS -> floatArrayOf(0.28f, 0.65f, 0.22f)
+            DIRT -> floatArrayOf(0.50f, 0.35f, 0.20f)
+            STONE -> floatArrayOf(0.50f, 0.50f, 0.52f)
+            COBBLESTONE -> floatArrayOf(0.42f, 0.42f, 0.44f)
+            SAND -> floatArrayOf(0.88f, 0.80f, 0.55f)
+            SNOW -> floatArrayOf(0.95f, 0.96f, 0.99f)
+            WOOD_LOG, WOOD_PLANKS -> floatArrayOf(0.60f, 0.44f, 0.28f)
+            LEAVES -> floatArrayOf(0.18f, 0.58f, 0.16f)
+            GLASS -> floatArrayOf(0.85f, 0.95f, 0.98f)
+            WATER -> floatArrayOf(0.20f, 0.55f, 0.90f)
+            COAL_ORE -> floatArrayOf(0.18f, 0.18f, 0.18f)
+            IRON_ORE -> floatArrayOf(0.78f, 0.60f, 0.45f)
+            GOLD_ORE -> floatArrayOf(0.98f, 0.82f, 0.15f)
+            DIAMOND_ORE -> floatArrayOf(0.32f, 0.92f, 0.92f)
+            ETHERITE_ORE -> floatArrayOf(0.75f, 0.35f, 0.98f)
+            PYRITE_ORE -> floatArrayOf(0.98f, 0.45f, 0.12f)
+            LUMINITE_ORE -> floatArrayOf(1.0f, 0.92f, 0.35f)
+            TORCH -> floatArrayOf(1.0f, 0.68f, 0.18f)
+            BRICKS -> floatArrayOf(0.62f, 0.55f, 0.50f)
+            CRAFTING_TABLE, BOOKSHELF -> floatArrayOf(0.55f, 0.38f, 0.25f)
+            OBSIDIAN -> floatArrayOf(0.15f, 0.12f, 0.22f)
+            CACTUS -> floatArrayOf(0.25f, 0.58f, 0.20f)
+            FLOWER_CYAN -> floatArrayOf(0.15f, 0.80f, 0.95f)
+            FLOWER_GOLDEN -> floatArrayOf(0.98f, 0.82f, 0.12f)
+            else -> floatArrayOf(0.5f, 0.5f, 0.5f)
+        }
+    }
 }

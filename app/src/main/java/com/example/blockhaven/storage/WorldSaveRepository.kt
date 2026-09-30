@@ -62,6 +62,20 @@ class WorldSaveRepository(private val dao: WorldDao) {
         player.ensureSafeGrounded(world)
     }
 
+    suspend fun saveChunkDeltaDirect(worldId: Long, chunk: Chunk) = withContext(Dispatchers.IO) {
+        if (chunk.isModified.compareAndSet(true, false)) {
+            val deltas = mutableListOf<BlockDeltaEntity>()
+            synchronized(chunk.blockModifications) {
+                for ((idx, blockId) in chunk.blockModifications) {
+                    deltas.add(BlockDeltaEntity(worldId, chunk.chunkX, chunk.chunkZ, idx, blockId))
+                }
+            }
+            if (deltas.isNotEmpty()) {
+                dao.insertBlockDeltas(deltas)
+            }
+        }
+    }
+
     suspend fun loadChunkDeltas(worldId: Long, chunk: Chunk) = withContext(Dispatchers.IO) {
         val deltas = dao.getDeltasForChunk(worldId, chunk.chunkX, chunk.chunkZ)
         for (d in deltas) {

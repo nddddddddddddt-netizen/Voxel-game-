@@ -163,13 +163,22 @@ fun GameScreen(
             world.updatePlayerPosition(player.pos)
             mobManager.update(world, player, 0.016f)
 
-            // Step sound
+            // Step sound and footstep dust
             if (player.onGround && (moveX != 0f || moveZ != 0f)) {
                 val now = System.currentTimeMillis()
-                if (now - lastStepSound > 360) {
+                if (now - lastStepSound > 340) {
                     lastStepSound = now
                     val belowBlock = world.getBlock(floor(player.pos.x).toInt(), floor(player.pos.y - 0.2f).toInt(), floor(player.pos.z).toInt())
                     soundEngine.playFootstep(BlockType.get(belowBlock).soundType)
+                    val dustColor = BlockType.getParticleColor(belowBlock)
+                    particles.spawnFootstep(player.pos, dustColor[0], dustColor[1], dustColor[2])
+                }
+            } else if (player.isInWater && (moveX != 0f || moveZ != 0f)) {
+                val now = System.currentTimeMillis()
+                if (now - lastStepSound > 450) {
+                    lastStepSound = now
+                    soundEngine.playWaterSplash()
+                    particles.spawnWaterSplash(player.pos)
                 }
             }
 
@@ -300,10 +309,13 @@ fun GameScreen(
                                 val b = world.getBlock(hit.blockPos.x, hit.blockPos.y, hit.blockPos.z)
                                 if (b != BlockType.BEDROCK && b != BlockType.AIR) {
                                     val def = BlockType.get(b)
+                                    val pColor = BlockType.getParticleColor(b)
                                     particles.spawnBreakParticles(
                                         Vec3f(hit.blockPos.x.toFloat(), hit.blockPos.y.toFloat(), hit.blockPos.z.toFloat()),
-                                        0.5f, 0.7f, 0.4f
+                                        pColor[0], pColor[1], pColor[2],
+                                        16
                                     )
+                                    particles.spawnHitSpark(Vec3f(hit.blockPos.x + 0.5f, hit.blockPos.y + 0.5f, hit.blockPos.z + 0.5f))
                                     world.setBlock(hit.blockPos.x, hit.blockPos.y, hit.blockPos.z, BlockType.AIR)
                                     soundEngine.playBlockBreak()
 
@@ -334,7 +346,11 @@ fun GameScreen(
                                         )
                                         if (!player.getBoundingBox().intersects(placeBox)) {
                                             world.setBlock(hit.placePos.x, hit.placePos.y, hit.placePos.z, def.blockId)
-                                            soundEngine.playBlockPlace()
+                                            if (def.blockId == BlockType.TORCH) {
+                                                soundEngine.playTorchPlace()
+                                            } else {
+                                                soundEngine.playBlockPlace()
+                                            }
                                             player.swingTime = 0.8f
                                             triggerHaptic(15)
 

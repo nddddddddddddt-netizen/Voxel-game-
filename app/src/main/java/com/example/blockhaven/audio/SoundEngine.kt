@@ -186,6 +186,61 @@ class SoundEngine(private val scope: CoroutineScope) {
         playPcm(buffer, sfxVolume)
     }
 
+    fun playWaterSplash() {
+        val numSamples = (sampleRate * 250) / 1000
+        val buffer = ShortArray(numSamples)
+        for (i in 0 until numSamples) {
+            val t = i.toFloat() / numSamples
+            val env = exp(-t * 6f)
+            val noise = (rand.nextFloat() * 2f - 1f) * 0.7f
+            val bubble = sin(2f * PI.toFloat() * (450f - t * 200f) * (i.toFloat() / sampleRate)) * 0.5f
+            buffer[i] = ((noise + bubble) * env * 22000f).toInt().toShort()
+        }
+        playPcm(buffer, sfxVolume * 0.85f)
+    }
+
+    fun playCreatureSound(isHostile: Boolean) {
+        val durationMs = if (isHostile) 350 else 220
+        val numSamples = (sampleRate * durationMs) / 1000
+        val buffer = ShortArray(numSamples)
+        val baseFreq = if (isHostile) 95f else 280f
+
+        for (i in 0 until numSamples) {
+            val t = i.toFloat() / numSamples
+            val env = sin(t * Math.PI.toFloat())
+            val freqMod = baseFreq + sin(t * 20f) * (if (isHostile) 35f else 70f)
+            val tone = sin(2f * PI.toFloat() * freqMod * (i.toFloat() / sampleRate))
+            val grit = (rand.nextFloat() * 2f - 1f) * (if (isHostile) 0.45f else 0.15f)
+            buffer[i] = ((tone * 0.75f + grit) * env * 18000f).toInt().toShort()
+        }
+        playPcm(buffer, sfxVolume * 0.8f)
+    }
+
+    fun playRainSound() {
+        val numSamples = (sampleRate * 400) / 1000
+        val buffer = ShortArray(numSamples)
+        for (i in 0 until numSamples) {
+            val t = i.toFloat() / numSamples
+            val env = sin(t * Math.PI.toFloat())
+            val noise = (rand.nextFloat() * 2f - 1f) * 0.55f
+            buffer[i] = (noise * env * 12000f).toInt().toShort()
+        }
+        playPcm(buffer, ambientVolume * 0.65f)
+    }
+
+    fun playWindAmbience() {
+        val numSamples = (sampleRate * 600) / 1000
+        val buffer = ShortArray(numSamples)
+        for (i in 0 until numSamples) {
+            val t = i.toFloat() / numSamples
+            val env = sin(t * Math.PI.toFloat())
+            val wave = sin(2f * PI.toFloat() * (120f + sin(t * 4f) * 30f) * (i.toFloat() / sampleRate)) * 0.4f
+            val whisper = (rand.nextFloat() * 2f - 1f) * 0.3f
+            buffer[i] = ((wave + whisper) * env * 14000f).toInt().toShort()
+        }
+        playPcm(buffer, ambientVolume * 0.6f)
+    }
+
     fun playUiClick() {
         val numSamples = (sampleRate * 40) / 1000
         val buffer = ShortArray(numSamples)
@@ -196,6 +251,41 @@ class SoundEngine(private val scope: CoroutineScope) {
             buffer[i] = (tone * env * 16000f).toInt().toShort()
         }
         playPcm(buffer, sfxVolume * 0.6f)
+    }
+
+    fun playTorchPlace() {
+        val numSamples = (sampleRate * 70) / 1000
+        val buffer = ShortArray(numSamples)
+        for (i in 0 until numSamples) {
+            val t = i.toFloat() / numSamples
+            val env = exp(-t * 9f)
+            val swoosh = sin(2f * PI.toFloat() * (280f + t * 180f) * (i.toFloat() / sampleRate)) * 0.5f
+            val hiss = (rand.nextFloat() * 2f - 1f) * 0.35f
+            buffer[i] = ((swoosh + hiss) * env * 18000f).toInt().toShort()
+        }
+        playPcm(buffer, sfxVolume * 0.75f)
+    }
+
+    fun playHurt() {
+        val numSamples = (sampleRate * 140) / 1000
+        val buffer = ShortArray(numSamples)
+        for (i in 0 until numSamples) {
+            val t = i.toFloat() / numSamples
+            val env = (1f - t) * exp(-t * 5f)
+            val groan = sin(2f * PI.toFloat() * (160f - t * 40f) * (i.toFloat() / sampleRate)) * 0.8f
+            buffer[i] = (groan * env * 24000f).toInt().toShort()
+        }
+        playPcm(buffer, sfxVolume * 0.9f)
+    }
+
+    fun playLevelUp() {
+        scope.launch(Dispatchers.Default) {
+            val notes = listOf(392f, 523.25f, 659.25f, 783.99f)
+            for (freq in notes) {
+                playChimeNote(freq)
+                delay(120)
+            }
+        }
     }
 
     private fun startAmbientMusicLoop() {

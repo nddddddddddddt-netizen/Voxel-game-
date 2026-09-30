@@ -9,6 +9,7 @@ import com.example.blockhaven.entity.Player
 import com.example.blockhaven.gameplay.Inventory
 import com.example.blockhaven.world.BlockType
 import com.example.blockhaven.world.World
+import kotlinx.coroutines.launch
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.ConcurrentHashMap
@@ -36,6 +37,8 @@ class VoxelRenderer(
     private var uFogColor = 0
     private var uTime = 0
     private var uIsUnderwater = 0
+    private var uTorchPos = 0
+    private var uTorchLight = 0
 
     private val viewMatrix = FloatArray(16)
     private val projMatrix = FloatArray(16)
@@ -44,6 +47,8 @@ class VoxelRenderer(
 
     val skyRenderer = SkyRenderer()
     private val chunkMeshes = ConcurrentHashMap<Long, ChunkMesh>()
+    private val pendingMeshes = ConcurrentHashMap<Long, RawChunkMeshData>()
+    private val inProgressChunks = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
 
     // Selection box program
     private var wireProgram = 0
@@ -159,6 +164,8 @@ class VoxelRenderer(
             uniform float uSunFactor;
             uniform float uTime;
             uniform int uIsUnderwater;
+            uniform vec3 uTorchPos;
+            uniform float uTorchLight;
 
             out vec4 fragColor;
 
@@ -177,6 +184,17 @@ class VoxelRenderer(
                 // Voxel Ambient Occlusion smooth darkening
                 float ao = clamp(vAo, 0.35, 1.0);
                 vec3 litColor = tex.rgb * vLight * diffuse * ao;
+
+                // Dynamic handheld torch point light
+                if (uTorchLight > 0.05) {
+                    float torchDist = length(uTorchPos - vWorldPos);
+                    if (torchDist < 12.0) {
+                        float torchAtten = clamp(1.0 - (torchDist / 12.0), 0.0, 1.0);
+                        torchAtten = torchAtten * torchAtten * uTorchLight;
+                        vec3 warmTorch = vec3(1.0, 0.72, 0.35);
+                        litColor += tex.rgb * warmTorch * torchAtten * 1.5;
+                    }
+                }
 
                 // Emissive bloom / glow
                 if (isEmissive) {
@@ -222,6 +240,8 @@ class VoxelRenderer(
         uFogColor = GLES30.glGetUniformLocation(program, "uFogColor")
         uTime = GLES30.glGetUniformLocation(program, "uTime")
         uIsUnderwater = GLES30.glGetUniformLocation(program, "uIsUnderwater")
+        uTorchPos = GLES30.glGetUniformLocation(program, "uTorchPos")
+        uTorchLight = GLES30.glGetUniformLocation(program, "uTorchLight")
     }
 
     private fun initWireframeBox() {
@@ -355,6 +375,9 @@ class VoxelRenderer(
         // Advance world time and particles
         world.tick(dt)
         particles.update(dt)
+        if (world.rainStrength > 0.05f) {
+            particles.spawnWeather(player.pos, world.rainStrength)
+        }
 
         // Camera setup
         val eyePos = player.getEyePos()
@@ -399,20 +422,42 @@ class VoxelRenderer(
         val fogCol = skyRenderer.getFogColor(world.timeOfDay)
         GLES30.glUniform3f(uFogColor, fogCol[0], fogCol[1], fogCol[2])
 
+        val heldItem = inventory?.getSelectedItem()
+        val holdsTorch = heldItem?.itemId == BlockType.TORCH.toInt() || heldItem?.itemId == BlockType.LUMINITE_ORE.toInt()
+        val torchStrength = if (holdsTorch) 1.0f else 0.0f
+        GLES30.glUniform3f(uTorchPos, eyePos.x, eyePos.y, eyePos.z)
+        GLES30.glUniform1f(uTorchLight, torchStrength)
+
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, TextureAtlas.textureId)
         GLES30.glUniform1i(uTexture, 0)
 
-        // Update dirty chunk meshes
+        // 1. Process prepared raw meshes from background threads (instant GPU upload)
+        if (pendingMeshes.isNotEmpty()) {
+            val iter = pendingMeshes.entries.iterator()
+            var uploadsThisFrame = 0
+            while (iter.hasNext() && uploadsThisFrame < 4) {
+                val entry = iter.next()
+                iter.remove()
+                val oldMesh = chunkMeshes[entry.key]
+                oldMesh?.delete()
+                chunkMeshes[entry.key] = ChunkMeshBuilder.upload(entry.value)
+                uploadsThisFrame++
+            }
+        }
+
+        // 2. Queue dirty/new chunks for background building without blocking render loop
         for ((key, chunk) in world.chunks) {
-            var mesh = chunkMeshes[key]
-            if (chunk.isMeshDirty || mesh == null) {
-                mesh?.delete()
-                mesh = ChunkMeshBuilder.build(chunk, world)
-                if (mesh != null) {
-                    chunkMeshes[key] = mesh
-                } else {
-                    chunkMeshes.remove(key)
+            val mesh = chunkMeshes[key]
+            if ((chunk.isMeshDirty || mesh == null) && !inProgressChunks.contains(key)) {
+                inProgressChunks.add(key)
+                world.worldScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+                    val raw = ChunkMeshBuilder.buildRaw(chunk, world)
+                    if (raw != null) {
+                        pendingMeshes[key] = raw
+                    }
+                    inProgressChunks.remove(key)
+                    chunk.isMeshDirty = false
                 }
             }
 
@@ -420,6 +465,14 @@ class VoxelRenderer(
                 GLES30.glBindVertexArray(mesh.opaqueVao)
                 GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, mesh.opaqueVertexCount)
             }
+        }
+
+        // 3. Clean up unloaded chunk meshes
+        val unloadedKeys = chunkMeshes.keys.filter { !world.chunks.containsKey(it) }
+        for (k in unloadedKeys) {
+            chunkMeshes.remove(k)?.delete()
+            pendingMeshes.remove(k)
+            inProgressChunks.remove(k)
         }
 
         // 4. Render Mobs
